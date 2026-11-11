@@ -1,0 +1,98 @@
+"""Interceptor for tool functions.
+
+``@ledger.tool`` records a function's arguments and result when a session is
+recording, and returns the recorded result without calling the function when
+it is replaying. Works on sync and async functions.
+
+Arguments and results must be JSON-serializable (Pydantic models and
+dataclasses are converted). On replay the result comes back as decoded JSON,
+so a tool that returns a tuple gets a list back; return JSON-shaped values.
+
+Tools with side effects that must happen once (payments, refunds) get
+``@ledger.effect`` in M2. ``@ledger.tool`` only records and replays.
+"""
+
+from __future__ import annotations
+
+import functools
+import inspect
+import time
+from collections.abc import Callable
+from typing import Any, TypeVar, overload
+
+from ledger.core.events import make_payload, pb
+from ledger.core.session import current_session
+from ledger.intercept._common import answer_from_log, log_live
+
+__all__ = ["tool"]
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def _identity(value: Any) -> Any:
+    return value
+
+
+def _wrap(fn: F, name: str) -> F:
+    def prepare(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[pb.ToolCall, pb.Payload]:
+        payload = make_payload({"args": list(args), "kwargs": kwargs})
+        return pb.ToolCall(name=name, args=payload), payload
+
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+            session = current_session()
+            if session is None:
+                return await fn(*args, **kwargs)
+            body, request = prepare(args, kwargs)
+            step = session.next_step()
+            if session.is_replay:
+                return answer_from_log(session, step, "tool_call", request, _identity)
+            started = time.perf_counter_ns()
+            try:
+                result = await fn(*args, **kwargs)
+            except Exception as exc:
+                log_live(session, step, "tool_call", body, error=exc, started_ns=started)
+                raise
+            log_live(session, step, "tool_call", body, response=result, started_ns=started)
+            return result
+
+        async_wrapper.__ledger_tool__ = name  # type: ignore[attr-defined]
+        return async_wrapper  # type: ignore[return-value]
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        session = current_session()
+        if session is None:
+            return fn(*args, **kwargs)
+        body, request = prepare(args, kwargs)
+        step = session.next_step()
+        if session.is_replay:
+            return answer_from_log(session, step, "tool_call", request, _identity)
+        started = time.perf_counter_ns()
+        try:
+            result = fn(*args, **kwargs)
+        except Exception as exc:
+            log_live(session, step, "tool_call", body, error=exc, started_ns=started)
+            raise
+        log_live(session, step, "tool_call", body, response=result, started_ns=started)
+        return result
+
+    wrapper.__ledger_tool__ = name  # type: ignore[attr-defined]
+    return wrapper  # type: ignore[return-value]
+
+
+@overload
+def tool(fn: F) -> F: ...
+@overload
+def tool(*, name: str | None = None) -> Callable[[F], F]: ...
+
+
+def tool(fn: F | None = None, *, name: str | None = None) -> Any:
+    """Record and replay a tool function. Use as ``@tool`` or ``@tool(name=...)``."""
+
+    def decorate(f: F) -> F:
+        return _wrap(f, name or f"{f.__module__}.{f.__qualname__}")
+
+    return decorate(fn) if fn is not None else decorate

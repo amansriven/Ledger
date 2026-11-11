@@ -1,0 +1,119 @@
+import datetime
+
+from google.protobuf import timestamp_pb2 as _timestamp_pb2
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import message as _message
+from collections.abc import Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+
+DESCRIPTOR: _descriptor.FileDescriptor
+
+class Mode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    MODE_UNSPECIFIED: _ClassVar[Mode]
+    MODE_RECORD: _ClassVar[Mode]
+    MODE_REPLAY: _ClassVar[Mode]
+MODE_UNSPECIFIED: Mode
+MODE_RECORD: Mode
+MODE_REPLAY: Mode
+
+class StepRef(_message.Message):
+    __slots__ = ("namespace", "superstep", "node", "path", "seq")
+    NAMESPACE_FIELD_NUMBER: _ClassVar[int]
+    SUPERSTEP_FIELD_NUMBER: _ClassVar[int]
+    NODE_FIELD_NUMBER: _ClassVar[int]
+    PATH_FIELD_NUMBER: _ClassVar[int]
+    SEQ_FIELD_NUMBER: _ClassVar[int]
+    namespace: str
+    superstep: int
+    node: str
+    path: str
+    seq: int
+    def __init__(self, namespace: _Optional[str] = ..., superstep: _Optional[int] = ..., node: _Optional[str] = ..., path: _Optional[str] = ..., seq: _Optional[int] = ...) -> None: ...
+
+class Payload(_message.Message):
+    __slots__ = ("sha256", "json")
+    SHA256_FIELD_NUMBER: _ClassVar[int]
+    JSON_FIELD_NUMBER: _ClassVar[int]
+    sha256: str
+    json: bytes
+    def __init__(self, sha256: _Optional[str] = ..., json: _Optional[bytes] = ...) -> None: ...
+
+class Error(_message.Message):
+    __slots__ = ("type", "message")
+    TYPE_FIELD_NUMBER: _ClassVar[int]
+    MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    type: str
+    message: str
+    def __init__(self, type: _Optional[str] = ..., message: _Optional[str] = ...) -> None: ...
+
+class RunStarted(_message.Message):
+    __slots__ = ("mode", "input", "source_run_id")
+    MODE_FIELD_NUMBER: _ClassVar[int]
+    INPUT_FIELD_NUMBER: _ClassVar[int]
+    SOURCE_RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    mode: Mode
+    input: Payload
+    source_run_id: str
+    def __init__(self, mode: _Optional[_Union[Mode, str]] = ..., input: _Optional[_Union[Payload, _Mapping]] = ..., source_run_id: _Optional[str] = ...) -> None: ...
+
+class RunFinished(_message.Message):
+    __slots__ = ("output", "error")
+    OUTPUT_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    output: Payload
+    error: Error
+    def __init__(self, output: _Optional[_Union[Payload, _Mapping]] = ..., error: _Optional[_Union[Error, _Mapping]] = ...) -> None: ...
+
+class LLMCall(_message.Message):
+    __slots__ = ("base_url", "operation", "model", "request", "response", "error", "latency_us")
+    BASE_URL_FIELD_NUMBER: _ClassVar[int]
+    OPERATION_FIELD_NUMBER: _ClassVar[int]
+    MODEL_FIELD_NUMBER: _ClassVar[int]
+    REQUEST_FIELD_NUMBER: _ClassVar[int]
+    RESPONSE_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    LATENCY_US_FIELD_NUMBER: _ClassVar[int]
+    base_url: str
+    operation: str
+    model: str
+    request: Payload
+    response: Payload
+    error: Error
+    latency_us: int
+    def __init__(self, base_url: _Optional[str] = ..., operation: _Optional[str] = ..., model: _Optional[str] = ..., request: _Optional[_Union[Payload, _Mapping]] = ..., response: _Optional[_Union[Payload, _Mapping]] = ..., error: _Optional[_Union[Error, _Mapping]] = ..., latency_us: _Optional[int] = ...) -> None: ...
+
+class ToolCall(_message.Message):
+    __slots__ = ("name", "args", "result", "error", "latency_us")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    ARGS_FIELD_NUMBER: _ClassVar[int]
+    RESULT_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    LATENCY_US_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    args: Payload
+    result: Payload
+    error: Error
+    latency_us: int
+    def __init__(self, name: _Optional[str] = ..., args: _Optional[_Union[Payload, _Mapping]] = ..., result: _Optional[_Union[Payload, _Mapping]] = ..., error: _Optional[_Union[Error, _Mapping]] = ..., latency_us: _Optional[int] = ...) -> None: ...
+
+class Event(_message.Message):
+    __slots__ = ("run_id", "index", "recorded_at", "step", "run_started", "run_finished", "llm_call", "tool_call")
+    RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    INDEX_FIELD_NUMBER: _ClassVar[int]
+    RECORDED_AT_FIELD_NUMBER: _ClassVar[int]
+    STEP_FIELD_NUMBER: _ClassVar[int]
+    RUN_STARTED_FIELD_NUMBER: _ClassVar[int]
+    RUN_FINISHED_FIELD_NUMBER: _ClassVar[int]
+    LLM_CALL_FIELD_NUMBER: _ClassVar[int]
+    TOOL_CALL_FIELD_NUMBER: _ClassVar[int]
+    run_id: str
+    index: int
+    recorded_at: _timestamp_pb2.Timestamp
+    step: StepRef
+    run_started: RunStarted
+    run_finished: RunFinished
+    llm_call: LLMCall
+    tool_call: ToolCall
+    def __init__(self, run_id: _Optional[str] = ..., index: _Optional[int] = ..., recorded_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., step: _Optional[_Union[StepRef, _Mapping]] = ..., run_started: _Optional[_Union[RunStarted, _Mapping]] = ..., run_finished: _Optional[_Union[RunFinished, _Mapping]] = ..., llm_call: _Optional[_Union[LLMCall, _Mapping]] = ..., tool_call: _Optional[_Union[ToolCall, _Mapping]] = ...) -> None: ...

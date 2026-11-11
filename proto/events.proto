@@ -1,0 +1,102 @@
+// Ledger event log schema.
+//
+// Shared by the Python runtime, the Go trace server and the UI. Every
+// intercepted call becomes one Event appended to a run's log.
+//
+// Payloads (requests, responses, tool args and results) are carried as
+// canonical JSON, not as nested protobuf messages. Protobuf serialization is
+// not canonical, so hashing proto bytes would give different digests for the
+// same logical value. Canonical JSON (sorted keys, no whitespace, UTF-8) is
+// hashed with SHA-256 instead, and that digest is what replay matches on.
+
+syntax = "proto3";
+
+package ledger.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Where in the graph a call happened. Stable across record and replay, so a
+// replayed call finds its recording by key rather than by global log order.
+// Parallel branches therefore never take each other's recorded responses.
+message StepRef {
+  // Parent graph namespaces with task ids stripped, joined by "|".
+  // Empty for the top-level graph.
+  string namespace = 1;
+  // LangGraph superstep number.
+  int64 superstep = 2;
+  // Node name.
+  string node = 3;
+  // LangGraph task path, rendered as a string (stable across runs).
+  string path = 4;
+  // Position of this call among the intercepted calls made by the same task.
+  int64 seq = 5;
+}
+
+// A JSON value in canonical form plus its SHA-256 digest (lowercase hex).
+// M1 moves large payloads into a content-addressed blob store keyed by the
+// same digest and leaves `json` empty.
+message Payload {
+  string sha256 = 1;
+  bytes json = 2;
+}
+
+message Error {
+  // Exception class, e.g. "openai.APIConnectionError".
+  string type = 1;
+  string message = 2;
+}
+
+enum Mode {
+  MODE_UNSPECIFIED = 0;
+  MODE_RECORD = 1;
+  MODE_REPLAY = 2;
+}
+
+message RunStarted {
+  Mode mode = 1;
+  Payload input = 2;
+  // Run this one replays, when mode is MODE_REPLAY.
+  string source_run_id = 3;
+}
+
+message RunFinished {
+  Payload output = 1;
+  Error error = 2;
+}
+
+message LLMCall {
+  // OpenAI-compatible endpoint the client points at.
+  string base_url = 1;
+  // "chat.completions.create" for now.
+  string operation = 2;
+  string model = 3;
+  Payload request = 4;
+  Payload response = 5;
+  Error error = 6;
+  int64 latency_us = 7;
+}
+
+message ToolCall {
+  string name = 1;
+  // {"args": [...], "kwargs": {...}}
+  Payload args = 2;
+  Payload result = 3;
+  Error error = 4;
+  int64 latency_us = 5;
+}
+
+message Event {
+  string run_id = 1;
+  // Position in the run's log, starting at 0, with no gaps.
+  int64 index = 2;
+  google.protobuf.Timestamp recorded_at = 3;
+  // Unset for run-level events.
+  StepRef step = 4;
+
+  oneof body {
+    RunStarted run_started = 10;
+    RunFinished run_finished = 11;
+    LLMCall llm_call = 12;
+    ToolCall tool_call = 13;
+  }
+}
