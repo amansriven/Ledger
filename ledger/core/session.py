@@ -15,6 +15,7 @@ that finish in a different order still get their own responses back.
 from __future__ import annotations
 
 import enum
+import random
 import threading
 import uuid
 from collections.abc import Iterator
@@ -29,7 +30,15 @@ from ledger.core.store import EventStore
 if TYPE_CHECKING:
     from ledger.replay.engine import ReplayIndex
 
-__all__ = ["Mode", "Session", "SessionStats", "current_session", "record", "new_run_id"]
+__all__ = [
+    "Mode",
+    "Session",
+    "SessionStats",
+    "current_session",
+    "record",
+    "new_run_id",
+    "task_coordinates",
+]
 
 
 class Mode(enum.Enum):
@@ -43,8 +52,13 @@ class Mode(enum.Enum):
 
 @dataclass
 class SessionStats:
+    """Counts of intercepted calls. ``*_calls`` are LLM and tool calls only;
+    reads of time, uuids and random seeds are counted as ``*_nondet``."""
+
     live_calls: int = 0
     replayed_calls: int = 0
+    live_nondet: int = 0
+    replayed_nondet: int = 0
 
 
 _current: ContextVar[Session | None] = ContextVar("ledger_session", default=None)
@@ -71,7 +85,7 @@ def _render_path(part: Any) -> str:
     return f"<{type(part).__name__}>"
 
 
-def _task_coordinates() -> tuple[str, int, str, str]:
+def task_coordinates() -> tuple[str, int, str, str]:
     """(namespace, superstep, node, path) of the LangGraph task running now."""
     try:
         from langgraph.config import get_config
@@ -116,13 +130,14 @@ class Session:
         self.output: Any = None
         self.output_sha256: str = ""
         self._counters: dict[tuple[str, int, str, str], int] = {}
+        self._rngs: dict[tuple[str, int, str, str], random.Random] = {}
         self._lock = threading.Lock()
 
     # Step identity
 
     def next_step(self) -> pb.StepRef:
         """StepRef for the next intercepted call made by the current task."""
-        coords = _task_coordinates()
+        coords = task_coordinates()
         with self._lock:
             seq = self._counters.get(coords, 0)
             self._counters[coords] = seq + 1
@@ -131,9 +146,14 @@ class Session:
             namespace=namespace, superstep=superstep, node=node, path=path, seq=seq
         )
 
-    def count_call(self, *, live: bool) -> None:
+    def count_call(self, *, live: bool, kind: str = "llm_call") -> None:
         with self._lock:
-            if live:
+            if kind == "nondet":
+                if live:
+                    self.stats.live_nondet += 1
+                else:
+                    self.stats.replayed_nondet += 1
+            elif live:
                 self.stats.live_calls += 1
             else:
                 self.stats.replayed_calls += 1

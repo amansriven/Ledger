@@ -10,28 +10,41 @@ from ledger.core.events import load_payload, make_error, make_payload, new_event
 from ledger.core.session import Session
 
 # Name of the field that holds the call's output, per event body kind.
-RESPONSE_FIELD = {"llm_call": "response", "tool_call": "result"}
+RESPONSE_FIELD = {"llm_call": "response", "tool_call": "result", "nondet": "value"}
 REQUEST_FIELD = {"llm_call": "request", "tool_call": "args"}
+KEY_FIELD = {"llm_call": "request_key", "tool_call": "args_key"}
 
 
 def answer_from_log(
     session: Session,
     step: pb.StepRef,
     kind: str,
-    request: pb.Payload,
+    request: pb.Payload | None,
     decode: Callable[[Any], Any],
+    *,
+    match_key: str,
 ) -> Any:
-    """Return (or re-raise) the recorded outcome of this call, and log it."""
+    """Return (or re-raise) the recorded outcome of this call, and log it.
+
+    The replay's log entry carries the request as it was made this time (it
+    may differ from the recording in masked parts) with the recorded outcome.
+    """
     from ledger.replay.engine import ReplayedError
 
     assert session.replay_index is not None
-    recorded = session.replay_index.take(step, kind, request.sha256)
+    recorded = session.replay_index.take(
+        step, kind, match_key=match_key, sha256=request.sha256 if request else match_key
+    )
     body = getattr(recorded, kind)
     ev = new_event(step)
-    getattr(ev, kind).CopyFrom(body)
+    logged = getattr(ev, kind)
+    logged.CopyFrom(body)
+    if kind in REQUEST_FIELD and request is not None:
+        getattr(logged, REQUEST_FIELD[kind]).CopyFrom(request)
+        setattr(logged, KEY_FIELD[kind], match_key)
     session.append(ev)
-    session.count_call(live=False)
-    if body.HasField("error"):
+    session.count_call(live=False, kind=kind)
+    if kind != "nondet" and body.HasField("error"):
         raise ReplayedError(body.error)
     return decode(load_payload(getattr(body, RESPONSE_FIELD[kind])))
 
@@ -56,4 +69,4 @@ def log_live(
     ev = new_event(step)
     getattr(ev, kind).CopyFrom(body)
     session.append(ev)
-    session.count_call(live=True)
+    session.count_call(live=True, kind=kind)

@@ -9,8 +9,14 @@
     graph.invoke(inputs)                      # recorded as a new run
     with ledger.replay(run_id) as session:    # answered from the log
         graph.invoke(inputs)
+
+Inside nodes, read the clock, ids and randomness through ``ledger.now()``,
+``ledger.time()``, ``ledger.uuid4()`` and ``ledger.rng()`` so replays see the
+recorded values.
 """
 
+from ledger.core.clock import now, rng, time, uuid4
+from ledger.core.normalize import EXACT, Normalizer
 from ledger.core.session import Mode, Session, current_session, record
 from ledger.core.store import EventStore
 from ledger.intercept.langgraph import instrument
@@ -19,17 +25,23 @@ from ledger.intercept.tools import tool
 from ledger.replay.engine import ReplayDivergence, ReplayedError, ReplayMismatch, replay
 
 __all__ = [
+    "EXACT",
     "EventStore",
     "Mode",
+    "Normalizer",
     "ReplayDivergence",
     "ReplayMismatch",
     "ReplayedError",
     "Session",
     "current_session",
     "instrument",
+    "now",
     "record",
     "replay",
+    "rng",
+    "time",
     "tool",
+    "uuid4",
     "wrap",
 ]
 

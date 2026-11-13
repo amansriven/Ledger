@@ -8,6 +8,10 @@ Arguments and results must be JSON-serializable (Pydantic models and
 dataclasses are converted). On replay the result comes back as decoded JSON,
 so a tool that returns a tuple gets a list back; return JSON-shaped values.
 
+Replay matches a call on its normalized args (``ledger.core.normalize``), so
+a timestamp or id inside an argument does not count as a change. Pass
+``normalizer=`` to change that.
+
 Tools with side effects that must happen once (payments, refunds) get
 ``@ledger.effect`` in M2. ``@ledger.tool`` only records and replays.
 """
@@ -21,6 +25,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar, overload
 
 from ledger.core.events import make_payload, pb
+from ledger.core.normalize import DEFAULT, Normalizer
 from ledger.core.session import current_session
 from ledger.intercept._common import answer_from_log, log_live
 
@@ -33,10 +38,11 @@ def _identity(value: Any) -> Any:
     return value
 
 
-def _wrap(fn: F, name: str) -> F:
+def _wrap(fn: F, name: str, normalizer: Normalizer) -> F:
     def prepare(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[pb.ToolCall, pb.Payload]:
         payload = make_payload({"args": list(args), "kwargs": kwargs})
-        return pb.ToolCall(name=name, args=payload), payload
+        body = pb.ToolCall(name=name, args=payload, args_key=normalizer.key_of(payload))
+        return body, payload
 
     if inspect.iscoroutinefunction(fn):
 
@@ -48,7 +54,9 @@ def _wrap(fn: F, name: str) -> F:
             body, request = prepare(args, kwargs)
             step = session.next_step()
             if session.is_replay:
-                return answer_from_log(session, step, "tool_call", request, _identity)
+                return answer_from_log(
+                    session, step, "tool_call", request, _identity, match_key=body.args_key
+                )
             started = time.perf_counter_ns()
             try:
                 result = await fn(*args, **kwargs)
@@ -69,7 +77,9 @@ def _wrap(fn: F, name: str) -> F:
         body, request = prepare(args, kwargs)
         step = session.next_step()
         if session.is_replay:
-            return answer_from_log(session, step, "tool_call", request, _identity)
+            return answer_from_log(
+                session, step, "tool_call", request, _identity, match_key=body.args_key
+            )
         started = time.perf_counter_ns()
         try:
             result = fn(*args, **kwargs)
@@ -86,13 +96,17 @@ def _wrap(fn: F, name: str) -> F:
 @overload
 def tool(fn: F) -> F: ...
 @overload
-def tool(*, name: str | None = None) -> Callable[[F], F]: ...
+def tool(
+    *, name: str | None = None, normalizer: Normalizer | None = None
+) -> Callable[[F], F]: ...
 
 
-def tool(fn: F | None = None, *, name: str | None = None) -> Any:
+def tool(
+    fn: F | None = None, *, name: str | None = None, normalizer: Normalizer | None = None
+) -> Any:
     """Record and replay a tool function. Use as ``@tool`` or ``@tool(name=...)``."""
 
     def decorate(f: F) -> F:
-        return _wrap(f, name or f"{f.__module__}.{f.__qualname__}")
+        return _wrap(f, name or f"{f.__module__}.{f.__qualname__}", normalizer or DEFAULT)
 
     return decorate(fn) if fn is not None else decorate

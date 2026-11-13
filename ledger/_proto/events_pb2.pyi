@@ -67,7 +67,7 @@ class RunFinished(_message.Message):
     def __init__(self, output: _Optional[_Union[Payload, _Mapping]] = ..., error: _Optional[_Union[Error, _Mapping]] = ...) -> None: ...
 
 class LLMCall(_message.Message):
-    __slots__ = ("base_url", "operation", "model", "request", "response", "error", "latency_us")
+    __slots__ = ("base_url", "operation", "model", "request", "response", "error", "latency_us", "request_key")
     BASE_URL_FIELD_NUMBER: _ClassVar[int]
     OPERATION_FIELD_NUMBER: _ClassVar[int]
     MODEL_FIELD_NUMBER: _ClassVar[int]
@@ -75,6 +75,7 @@ class LLMCall(_message.Message):
     RESPONSE_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
     LATENCY_US_FIELD_NUMBER: _ClassVar[int]
+    REQUEST_KEY_FIELD_NUMBER: _ClassVar[int]
     base_url: str
     operation: str
     model: str
@@ -82,24 +83,35 @@ class LLMCall(_message.Message):
     response: Payload
     error: Error
     latency_us: int
-    def __init__(self, base_url: _Optional[str] = ..., operation: _Optional[str] = ..., model: _Optional[str] = ..., request: _Optional[_Union[Payload, _Mapping]] = ..., response: _Optional[_Union[Payload, _Mapping]] = ..., error: _Optional[_Union[Error, _Mapping]] = ..., latency_us: _Optional[int] = ...) -> None: ...
+    request_key: str
+    def __init__(self, base_url: _Optional[str] = ..., operation: _Optional[str] = ..., model: _Optional[str] = ..., request: _Optional[_Union[Payload, _Mapping]] = ..., response: _Optional[_Union[Payload, _Mapping]] = ..., error: _Optional[_Union[Error, _Mapping]] = ..., latency_us: _Optional[int] = ..., request_key: _Optional[str] = ...) -> None: ...
 
 class ToolCall(_message.Message):
-    __slots__ = ("name", "args", "result", "error", "latency_us")
+    __slots__ = ("name", "args", "result", "error", "latency_us", "args_key")
     NAME_FIELD_NUMBER: _ClassVar[int]
     ARGS_FIELD_NUMBER: _ClassVar[int]
     RESULT_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
     LATENCY_US_FIELD_NUMBER: _ClassVar[int]
+    ARGS_KEY_FIELD_NUMBER: _ClassVar[int]
     name: str
     args: Payload
     result: Payload
     error: Error
     latency_us: int
-    def __init__(self, name: _Optional[str] = ..., args: _Optional[_Union[Payload, _Mapping]] = ..., result: _Optional[_Union[Payload, _Mapping]] = ..., error: _Optional[_Union[Error, _Mapping]] = ..., latency_us: _Optional[int] = ...) -> None: ...
+    args_key: str
+    def __init__(self, name: _Optional[str] = ..., args: _Optional[_Union[Payload, _Mapping]] = ..., result: _Optional[_Union[Payload, _Mapping]] = ..., error: _Optional[_Union[Error, _Mapping]] = ..., latency_us: _Optional[int] = ..., args_key: _Optional[str] = ...) -> None: ...
+
+class Nondet(_message.Message):
+    __slots__ = ("source", "value")
+    SOURCE_FIELD_NUMBER: _ClassVar[int]
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    source: str
+    value: Payload
+    def __init__(self, source: _Optional[str] = ..., value: _Optional[_Union[Payload, _Mapping]] = ...) -> None: ...
 
 class Event(_message.Message):
-    __slots__ = ("run_id", "index", "recorded_at", "step", "run_started", "run_finished", "llm_call", "tool_call")
+    __slots__ = ("run_id", "index", "recorded_at", "step", "run_started", "run_finished", "llm_call", "tool_call", "nondet")
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     INDEX_FIELD_NUMBER: _ClassVar[int]
     RECORDED_AT_FIELD_NUMBER: _ClassVar[int]
@@ -108,6 +120,7 @@ class Event(_message.Message):
     RUN_FINISHED_FIELD_NUMBER: _ClassVar[int]
     LLM_CALL_FIELD_NUMBER: _ClassVar[int]
     TOOL_CALL_FIELD_NUMBER: _ClassVar[int]
+    NONDET_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     index: int
     recorded_at: _timestamp_pb2.Timestamp
@@ -116,4 +129,5 @@ class Event(_message.Message):
     run_finished: RunFinished
     llm_call: LLMCall
     tool_call: ToolCall
-    def __init__(self, run_id: _Optional[str] = ..., index: _Optional[int] = ..., recorded_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., step: _Optional[_Union[StepRef, _Mapping]] = ..., run_started: _Optional[_Union[RunStarted, _Mapping]] = ..., run_finished: _Optional[_Union[RunFinished, _Mapping]] = ..., llm_call: _Optional[_Union[LLMCall, _Mapping]] = ..., tool_call: _Optional[_Union[ToolCall, _Mapping]] = ...) -> None: ...
+    nondet: Nondet
+    def __init__(self, run_id: _Optional[str] = ..., index: _Optional[int] = ..., recorded_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., step: _Optional[_Union[StepRef, _Mapping]] = ..., run_started: _Optional[_Union[RunStarted, _Mapping]] = ..., run_finished: _Optional[_Union[RunFinished, _Mapping]] = ..., llm_call: _Optional[_Union[LLMCall, _Mapping]] = ..., tool_call: _Optional[_Union[ToolCall, _Mapping]] = ..., nondet: _Optional[_Union[Nondet, _Mapping]] = ...) -> None: ...
