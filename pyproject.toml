@@ -22,6 +22,9 @@ dev = [
     "grpcio-tools>=1.66",
     "hypothesis>=6.170.16",
 ]
+examples = [
+    "stripe>=17.1.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -31,7 +34,7 @@ build-backend = "hatchling.build"
 packages = ["ledger"]
 
 [tool.uv]
-default-groups = ["dev", "bench"]
+default-groups = ["dev", "bench", "examples"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

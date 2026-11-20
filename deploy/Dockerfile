@@ -6,11 +6,11 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy PYTHONUNBUFFERED=1
 
 # Dependencies first, so code changes don't reinstall them.
 COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --frozen --no-dev --group bench --no-install-project
+RUN uv sync --frozen --no-dev --group bench --group examples --no-install-project
 
 COPY ledger ledger
 COPY examples examples
 COPY bench bench
-RUN uv sync --frozen --no-dev --group bench
+RUN uv sync --frozen --no-dev --group bench --group examples
 
 ENV PATH=/app/.venv/bin:$PATH

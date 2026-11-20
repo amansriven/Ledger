@@ -2,7 +2,7 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay) done; M2 (exactly-once effects) under way, week 4.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key. Resuming a crashed run, saga compensation and the chaos benchmark come next; blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay) done; M2 (exactly-once effects) under way, week 4.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. Resuming a crashed run, saga compensation and the chaos benchmark come next; blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
 
 ## Integration
 
@@ -133,7 +133,23 @@ If every attempt fails in a way that leaves the outcome unknown, the step stays 
 
 Replays answer effects from the log and never call the function. A replay or fork that would have to run an effect live, because it diverged upstream or a fork reruns the effect, raises `ledger.LiveEffectRefused` unless it was started with `live_effects=True`. A live effect there belongs to the new run and gets that run's keys. A fork can still edit an effect's outcome, which never calls it.
 
-This is effectively once, not exactly once: it relies on the API honouring idempotency keys, which Stripe does for 24 hours.
+This is effectively once, not exactly once: it relies on the API honouring idempotency keys, which Stripe does for 24 hours. For longer outages the key is also put in the refund's metadata, so it can be looked up.
+
+### Refund agent
+
+`examples/refund_agent.py` turns a support ticket into a Stripe refund: `lookup` reads the charge (a tool), `decide` applies the refund policy in code, `refund` is the effect, and `reply` has the LLM draft the answer. It runs with the official `stripe` SDK against `ledger.testing.fake_stripe`, a fake Stripe API that honours idempotency keys and can drop a connection before or after applying a request, or answer 500. To point it at Stripe itself, set `STRIPE_API_BASE=` (empty) and put a test key in `STRIPE_SECRET_KEY`, in the environment or in `.env` at the repo root (git ignores it). Only that one variable is read from `.env`, live keys are refused, and the fake server never gets the real key.
+
+```sh
+uv run python -m ledger.testing.fake_stripe --port 12111 &
+uv run python -m ledger.testing.fake_llm --port 8787 &
+uv run python -m examples.refund_agent          # seeds a charge, records one refund
+```
+
+`tests/test_refund_agent.py` covers:
+- a dropped or failed attempt (before or after Stripe applied it, and a 500) still ends in exactly one refund;
+- a refund lost every time ends in doubt, with still one refund at Stripe;
+- a refused refund is logged as `FAILED`;
+- a replay with Stripe gone makes no request.
 
 ## Clock, ids and randomness
 
@@ -188,6 +204,8 @@ docker compose -f deploy/docker-compose.yml run --rm replay
 | `ledger/effects/` | `@ledger.effect`: idempotency keys, write-ahead pending/confirmed records, retries |
 | `ledger/cli.py` | The `ledger` command: `record`, `replay`, `fork`, `steps`, `runs` |
 | `ledger/testing/fake_llm.py` | Nondeterministic fake LLM and search server |
+| `ledger/testing/fake_stripe.py` | Fake Stripe API (charges, refunds, idempotency keys) with injectable faults |
+| `examples/refund_agent.py` | Support-ticket refund agent; the M2 workload |
 | `examples/toy_pipeline.py` | 5-node pipeline with a 3-way parallel fan-out |
 | `bench/replay_fidelity.py` | Replay-fidelity benchmark against LangGraph checkpoint replay; results in `bench/results/` |
 | `deploy/` | Dockerfile and Compose file |
