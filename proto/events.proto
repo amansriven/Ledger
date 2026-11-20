@@ -61,6 +61,10 @@ message RunStarted {
   Payload input = 2;
   // Run this one replays, when mode is MODE_REPLAY or MODE_FORK.
   string source_run_id = 3;
+  // The graph that ran, as "module:attr", when the ledger CLI started the
+  // run. Lets `ledger replay` and `ledger fork` find it again. Empty for
+  // runs started from Python.
+  string graph = 4;
 }
 
 message RunFinished {

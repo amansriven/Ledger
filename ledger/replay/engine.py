@@ -193,6 +193,8 @@ class ReplayIndex:
         self.on_divergence = on_divergence
         self.calls: dict[str, pb.Event] = {}
         self.output_sha256 = ""
+        # The error the recorded run ended with, if it failed.
+        self.output_error: pb.Error | None = None
         self.input: pb.Payload | None = None
         for ev in events:
             kind = body_kind(ev)
@@ -202,6 +204,8 @@ class ReplayIndex:
                 self.input = ev.run_started.input
             elif kind == "run_finished" and ev.run_finished.HasField("output"):
                 self.output_sha256 = ev.run_finished.output.sha256
+            elif kind == "run_finished" and ev.run_finished.HasField("error"):
+                self.output_error = ev.run_finished.error
         self.divergences: list[DivergencePoint] = []
         # Fork edits by step key: a JSON value, a callable, or RERUN.
         self.forks: dict[str, Any] = dict(forks or {})

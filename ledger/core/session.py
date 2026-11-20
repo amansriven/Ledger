@@ -136,6 +136,8 @@ class Session:
         self.stats = SessionStats()
         self.output: Any = None
         self.output_sha256: str = ""
+        # "module:attr" of the graph, set by the CLI and logged in RunStarted.
+        self.graph_ref: str = ""
         self._counters: dict[tuple[str, int, str, str], int] = {}
         self._rngs: dict[tuple[str, int, str, str], random.Random] = {}
         self._lock = threading.Lock()
@@ -179,6 +181,7 @@ class Session:
                 mode=self.mode.proto,
                 input=make_payload(graph_input),
                 source_run_id=self.source_run_id,
+                graph=self.graph_ref,
             )
         )
         self.append(ev)

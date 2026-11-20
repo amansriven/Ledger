@@ -2,7 +2,7 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay), week 3.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live. The CLI, a property test and the 200-run replay benchmark come next. Exactly-once effects, blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay), week 3.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. A property test and the 200-run replay benchmark come next. Exactly-once effects, blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
 
 ## Integration
 
@@ -82,6 +82,19 @@ One limitation, for replays and forks alike: step keys don't carry the parent gr
 
 Events go to SQLite in WAL mode (`$LEDGER_DB`, default `ledger.db`), one fsynced transaction per event. Payloads over 4 KB go to a content-addressed blob store next to it (`ledger.db.blobs/`), named by their SHA-256, written and fsynced before the event that refers to them. A recording and its replays share blobs, and reads check every blob against its digest. `EventStore.run_storage(run_id)` reports a run's bytes.
 
+## CLI
+
+```sh
+ledger record -g examples.toy_pipeline:graph_from_env --input '{"topic": "fencing tokens"}'
+ledger runs                                    # every run: mode, source, status, live calls
+ledger replay RUN_ID                           # strict; exit 1 unless identical
+ledger replay --all --live                     # report divergences instead of failing
+ledger steps RUN_ID [--node write]             # the calls a fork can target, by index
+ledger fork RUN_ID --edit 4='a different summary' --edit-json 3='{"results": []}' --rerun 11
+```
+
+`-g` names the graph as `module:attr`: a compiled graph, or a function with no arguments that returns one. `record` logs it with the run, so `replay` and `fork` find the graph again. They fall back to `$LEDGER_GRAPH` for runs recorded from Python, and an explicit `-g` overrides both. Replays and forks take their input from the recording. A run that failed when recorded replays identically if it fails with the same error. `--db` picks the event store (else `$LEDGER_DB`, else `ledger.db`). `python -m ledger` is the same command.
+
 ## Try it
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.11 to 3.13.
@@ -92,9 +105,9 @@ uv run pytest                                  # includes the replay gate with s
 
 # Local: fake OpenAI-compatible server, record, stop server, replay
 uv run python -m ledger.testing.fake_llm --port 8787 &
-uv run python -m examples.toy_pipeline record --runs 5
+uv run ledger record -g examples.toy_pipeline:graph_from_env --input '{"topic": "fencing tokens"}' --runs 5
 kill %1
-uv run python -m examples.toy_pipeline replay --all
+uv run ledger replay --all
 
 # Docker: replay runs with network_mode: none
 docker compose -f deploy/docker-compose.yml run --rm record
@@ -109,6 +122,7 @@ docker compose -f deploy/docker-compose.yml run --rm replay
 | `ledger/core/` | Canonical payloads, SQLite WAL event store, blob store, request normalization, clock/uuid/rng shims, sessions and step keys |
 | `ledger/intercept/` | OpenAI client wrapper, `@tool`, LangGraph `instrument` |
 | `ledger/replay/` | Replay index, divergence detection, `replay`, and `fork` with `steps` |
+| `ledger/cli.py` | The `ledger` command: `record`, `replay`, `fork`, `steps`, `runs` |
 | `ledger/testing/fake_llm.py` | Nondeterministic fake LLM and search server |
 | `examples/toy_pipeline.py` | 5-node pipeline with a 3-way parallel fan-out |
 | `deploy/` | Dockerfile and Compose file |

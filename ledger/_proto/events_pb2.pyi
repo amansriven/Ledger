@@ -66,14 +66,16 @@ class Error(_message.Message):
     def __init__(self, type: _Optional[str] = ..., message: _Optional[str] = ...) -> None: ...
 
 class RunStarted(_message.Message):
-    __slots__ = ("mode", "input", "source_run_id")
+    __slots__ = ("mode", "input", "source_run_id", "graph")
     MODE_FIELD_NUMBER: _ClassVar[int]
     INPUT_FIELD_NUMBER: _ClassVar[int]
     SOURCE_RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    GRAPH_FIELD_NUMBER: _ClassVar[int]
     mode: Mode
     input: Payload
     source_run_id: str
-    def __init__(self, mode: _Optional[_Union[Mode, str]] = ..., input: _Optional[_Union[Payload, _Mapping]] = ..., source_run_id: _Optional[str] = ...) -> None: ...
+    graph: str
+    def __init__(self, mode: _Optional[_Union[Mode, str]] = ..., input: _Optional[_Union[Payload, _Mapping]] = ..., source_run_id: _Optional[str] = ..., graph: _Optional[str] = ...) -> None: ...
 
 class RunFinished(_message.Message):
     __slots__ = ("output", "error")
