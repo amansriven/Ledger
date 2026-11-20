@@ -1,9 +1,9 @@
 """Replay: answer intercepted calls from a recorded run instead of the network.
 
-M0 is strict. Every call must find a recording at the same step key with the
-same request digest, or replay stops with ReplayMismatch. M1 replaces the
-hard stop with divergence detection that switches to live calls from the
-first mismatch.
+Replay is strict: every call must find a recording at the same step key
+whose request has the same match key (see ``ledger.core.normalize``), or
+replay stops with ReplayMismatch. Divergence detection that switches to live
+calls from the first mismatch comes next in M1.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from ledger.core.store import EventStore, step_key
 
 __all__ = ["ReplayIndex", "ReplayMismatch", "ReplayDivergence", "ReplayedError", "replay"]
 
-CALL_KINDS = ("llm_call", "tool_call")
+CALL_KINDS = ("llm_call", "tool_call", "nondet")
 
 
 class ReplayMismatch(RuntimeError):
@@ -38,13 +38,19 @@ class ReplayedError(RuntimeError):
         self.original_message = error.message
 
 
-def _request_digest(event: pb.Event) -> str:
+def _recorded_match(event: pb.Event) -> tuple[str, str]:
+    """(match key, raw digest) of a recorded call's request.
+
+    M0 logs have no match key; they are compared on the raw digest.
+    """
     kind = body_kind(event)
     if kind == "llm_call":
-        return event.llm_call.request.sha256
+        return event.llm_call.request_key, event.llm_call.request.sha256
     if kind == "tool_call":
-        return event.tool_call.args.sha256
-    return ""
+        return event.tool_call.args_key, event.tool_call.args.sha256
+    if kind == "nondet":
+        return event.nondet.source, event.nondet.source
+    return "", ""
 
 
 class ReplayIndex:
@@ -65,7 +71,12 @@ class ReplayIndex:
         self._consumed: set[str] = set()
         self._lock = threading.Lock()
 
-    def take(self, step: pb.StepRef, kind: str, request_sha256: str) -> pb.Event:
+    def take(self, step: pb.StepRef, kind: str, *, match_key: str, sha256: str) -> pb.Event:
+        """The recording at ``step``, if it is a ``kind`` call with the same request.
+
+        ``match_key`` is the normalized request's digest and ``sha256`` the raw
+        one; which is compared depends on what the recording carries.
+        """
         key = step_key(step)
         recorded = self.calls.get(key)
         if recorded is None:
@@ -74,11 +85,15 @@ class ReplayIndex:
             raise ReplayMismatch(
                 f"step {key} recorded a {body_kind(recorded)}, replay made a {kind}"
             )
-        recorded_sha = _request_digest(recorded)
-        if recorded_sha != request_sha256:
+        recorded_key, recorded_sha = _recorded_match(recorded)
+        if recorded_key:
+            expected, actual = recorded_key, match_key
+        else:
+            expected, actual = recorded_sha, sha256
+        if expected != actual:
             raise ReplayMismatch(
-                f"request at step {key} changed: recorded {recorded_sha[:12]}, "
-                f"replayed {request_sha256[:12]}"
+                f"request at step {key} changed: recorded {expected[:12]}, "
+                f"replayed {actual[:12]}"
             )
         with self._lock:
             if key in self._consumed:

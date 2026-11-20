@@ -8,6 +8,10 @@ the client is forwarded untouched.
 Any provider with an OpenAI-compatible endpoint (NVIDIA NIM, vLLM, Together,
 a local server) plugs in the same way: point the client's ``base_url`` at it.
 
+Replay matches a request on its normalized form (``ledger.core.normalize``):
+timestamps and ids in the prompt are masked, and ``timeout`` and
+``extra_headers`` are ignored. Pass ``normalizer=`` to change that.
+
 Not yet supported: ``stream=True``, ``with_raw_response``, the Responses API.
 """
 
@@ -18,6 +22,7 @@ import time
 from typing import Any
 
 from ledger.core.events import make_payload, pb
+from ledger.core.normalize import LLM_DEFAULT, Normalizer
 from ledger.core.session import current_session
 from ledger.intercept._common import answer_from_log, log_live
 
@@ -37,9 +42,10 @@ def _encode_completion(resp: Any) -> Any:
 
 
 class _Completions:
-    def __init__(self, inner: Any, base_url: str) -> None:
+    def __init__(self, inner: Any, base_url: str, normalizer: Normalizer) -> None:
         self._inner = inner
         self._base_url = base_url
+        self._normalizer = normalizer
         # openai's decorators hide that AsyncCompletions.create is a coroutine
         # function, so check the unwrapped function and the resource type.
         self._is_async = inspect.iscoroutinefunction(
@@ -58,6 +64,7 @@ class _Completions:
             operation=OPERATION,
             model=str(kwargs.get("model", "")),
             request=request,
+            request_key=self._normalizer.key_of(request),
         )
         return body, request
 
@@ -70,7 +77,10 @@ class _Completions:
         body, request = self._prepare(kwargs)
         step = session.next_step()
         if session.is_replay:
-            return answer_from_log(session, step, "llm_call", request, _decode_completion)
+            return answer_from_log(
+                session, step, "llm_call", request, _decode_completion,
+                match_key=body.request_key,
+            )
         started = time.perf_counter_ns()
         try:
             resp = self._inner.create(**kwargs)
@@ -90,7 +100,10 @@ class _Completions:
         body, request = self._prepare(kwargs)
         step = session.next_step()
         if session.is_replay:
-            return answer_from_log(session, step, "llm_call", request, _decode_completion)
+            return answer_from_log(
+                session, step, "llm_call", request, _decode_completion,
+                match_key=body.request_key,
+            )
         started = time.perf_counter_ns()
         try:
             resp = await self._inner.create(**kwargs)
@@ -105,9 +118,9 @@ class _Completions:
 
 
 class _Chat:
-    def __init__(self, inner: Any, base_url: str) -> None:
+    def __init__(self, inner: Any, base_url: str, normalizer: Normalizer) -> None:
         self._inner = inner
-        self.completions = _Completions(inner.completions, base_url)
+        self.completions = _Completions(inner.completions, base_url, normalizer)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
@@ -116,9 +129,9 @@ class _Chat:
 class LedgerClient:
     """Proxy around an OpenAI or AsyncOpenAI client."""
 
-    def __init__(self, client: Any) -> None:
+    def __init__(self, client: Any, normalizer: Normalizer = LLM_DEFAULT) -> None:
         self._client = client
-        self.chat = _Chat(client.chat, str(getattr(client, "base_url", "")))
+        self.chat = _Chat(client.chat, str(getattr(client, "base_url", "")), normalizer)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._client, name)
@@ -128,8 +141,14 @@ class LedgerClient:
         return self._client
 
 
-def wrap(client: Any) -> LedgerClient:
-    """Wrap an OpenAI-compatible client so its completions are recorded and replayed."""
+def wrap(client: Any, *, normalizer: Normalizer | None = None) -> LedgerClient:
+    """Wrap an OpenAI-compatible client so its completions are recorded and replayed.
+
+    ``normalizer`` decides which requests count as the same during replay;
+    the default masks timestamps and ids (see ``ledger.core.normalize``).
+    """
     if isinstance(client, LedgerClient):
-        return client
-    return LedgerClient(client)
+        if normalizer is None:
+            return client
+        client = client.wrapped
+    return LedgerClient(client, normalizer or LLM_DEFAULT)

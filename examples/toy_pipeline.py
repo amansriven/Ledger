@@ -8,6 +8,10 @@ so the branches finish in a different order from run to run. The `write`
 node's prompt includes every note in state order, so if that order drifted,
 replay would see a changed request and stop.
 
+`plan` picks a tone with ``ledger.rng()`` and `write` stamps the report with
+``ledger.uuid4()`` and ``ledger.now()``, so replay also depends on recorded
+randomness, ids and clock reads.
+
 Usage (fake server on :8787, see ledger.testing.fake_llm):
 
     python -m examples.toy_pipeline record --runs 5
@@ -22,6 +26,7 @@ import operator
 import os
 import random
 import sys
+from datetime import UTC
 from typing import Annotated, Any, TypedDict
 
 import httpx
@@ -33,6 +38,7 @@ from ledger.core.events import body_kind, load_payload, pb
 from ledger.intercept.langgraph import InstrumentedGraph
 
 ANGLES = ("web", "docs", "code")
+TONES = ("brief", "detailed", "skeptical")
 TOPICS = (
     "vector clocks",
     "write-ahead logging",
@@ -75,7 +81,8 @@ def build_graph(llm: Any, *, tools_url: str, model: str) -> InstrumentedGraph:
         )
 
     def plan(state: State) -> State:
-        return {"plan": ask(f"List three research angles for: {state['topic']}")}
+        tone = ledger.rng().choice(TONES)
+        return {"plan": ask(f"In a {tone} tone, list three research angles for: {state['topic']}")}
 
     def research(angle: str):
         def node(state: State) -> State:
@@ -91,7 +98,9 @@ def build_graph(llm: Any, *, tools_url: str, model: str) -> InstrumentedGraph:
 
     def write(state: State) -> State:
         notes = "\n".join(state["notes"])
-        return {"draft": ask(f"Write a short report on {state['topic']} from:\n{notes}")}
+        header = f"Report {ledger.uuid4()} ({ledger.now(UTC):%Y-%m-%d %H:%M} UTC)"
+        draft = ask(f"Write a short report on {state['topic']} from:\n{notes}")
+        return {"draft": f"{header}\n{draft}"}
 
     builder = StateGraph(State)
     builder.add_node("plan", plan)
