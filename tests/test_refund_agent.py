@@ -25,8 +25,16 @@ def ticket(charge, **extra):
     }
 
 
-def effect_events(store, run_id):
-    return [ev.effect for ev in store.events(run_id) if body_kind(ev) == "effect"]
+REFUND = "stripe.refunds.create"
+CLAIM = "stripe.charges.claim"
+
+
+def effect_events(store, run_id, name=REFUND):
+    """The log's events for one effect, by name (the refund by default)."""
+    return [
+        ev.effect for ev in store.events(run_id)
+        if body_kind(ev) == "effect" and ev.effect.name == name
+    ]
 
 
 def test_one_ticket_one_refund_keyed_by_run_and_step(agent, stripe_server, store):
@@ -39,6 +47,11 @@ def test_one_ticket_one_refund_keyed_by_run_and_step(agent, stripe_server, store
     pending, confirmed = effect_events(store, rec.run_id)
     assert refund["metadata"] == {"ticket_id": "T-1", "ledger_key": pending.idempotency_key}
     assert confirmed.phase == pb.EffectCall.PHASE_CONFIRMED
+    # The charge stays claimed by the ticket that refunded it.
+    assert stripe_server.charge(charge["id"])["metadata"] == {"refund_claim": "T-1"}
+    assert [e.phase for e in effect_events(store, rec.run_id, CLAIM)] == [
+        pb.EffectCall.PHASE_PENDING, pb.EffectCall.PHASE_CONFIRMED,
+    ]
     assert out["reply"]
 
 
@@ -71,9 +84,12 @@ def test_a_refund_lost_every_time_is_in_doubt_not_repeated(agent, stripe_server,
     assert refund["metadata"]["ledger_key"] == info.value.idempotency_key
     phases = [e.phase for e in effect_events(store, rec.run_id)]
     assert phases == [pb.EffectCall.PHASE_PENDING] * 2
+    # In doubt is not a failure for good: the claim stays, for the resume.
+    assert stripe_server.charge(charge["id"])["metadata"] == {"refund_claim": "T-1"}
+    assert effect_events(store, rec.run_id, CLAIM + ":compensate") == []
 
 
-def test_a_refused_refund_is_a_definite_failure(agent, stripe_server, store, monkeypatch):
+def test_a_refused_refund_fails_and_releases_the_claim(agent, stripe_server, store, monkeypatch):
     import stripe
 
     charge = stripe_server.create_charge(1000)
@@ -93,6 +109,20 @@ def test_a_refused_refund_is_a_definite_failure(agent, stripe_server, store, mon
     assert failed.phase == pb.EffectCall.PHASE_FAILED and failed.attempts == 1
     assert failed.error.type == "stripe._error.InvalidRequestError"
     assert len(stripe_server.refunds_of(charge["id"])) == 1  # only the other one
+    # The saga released the claim, with an effect of its own.
+    assert stripe_server.charge(charge["id"])["metadata"] == {}
+    _, released = effect_events(store, rec.run_id, CLAIM + ":compensate")
+    assert released.phase == pb.EffectCall.PHASE_CONFIRMED
+    assert ledger.resumable_runs(store) == []  # failed for good: nothing to resume
+
+    # A replay fails the same way, and answers the release from the log.
+    monkeypatch.setattr(refund_agent, "decide", decide)  # no more racing refunds
+    posts = stripe_server.state()["requests"]
+    with ledger.replay(rec.run_id, store) as rep:
+        with pytest.raises(stripe.InvalidRequestError):
+            agent.invoke(load_payload(rep.replay_index.input))
+    assert stripe_server.state()["requests"] == posts
+    assert rep.stats.live_calls == 0
 
 
 def test_replay_with_stripe_gone_makes_no_request(agent, stripe_server, store, request):
@@ -107,9 +137,17 @@ def test_replay_with_stripe_gone_makes_no_request(agent, stripe_server, store, r
     with ledger.replay(rec.run_id, store) as rep:
         replayed = agent.invoke(load_payload(rep.replay_index.input))
     assert replayed == recorded
-    assert rep.stats.live_calls == 0 and rep.stats.replayed_calls == 3
+    assert rep.stats.live_calls == 0 and rep.stats.replayed_calls == 4
     assert stripe_server.state()["requests"] == before
     assert len(stripe_server.refunds_of(charge["id"])) == 1
+
+
+def test_a_charge_claimed_by_another_ticket_is_left_alone(agent, stripe_server, store):
+    charge = stripe_server.create_charge(1000, metadata={"refund_claim": "T-7"})
+    with ledger.record(store):
+        out = agent.invoke(ticket(charge))
+    assert out["refund"] is None and "T-7" in out["decision"]["why"]
+    assert stripe_server.state()["requests"].get("POST /v1/refunds", 0) == 0
 
 
 def test_policy_sends_big_refunds_to_a_human(agent, stripe_server, store):
@@ -151,10 +189,11 @@ def kinds(store, run_id):
     return [body_kind(ev) for ev in store.events(run_id)]
 
 
-# A clean run of the agent logs 6 events: run_started, the charge lookup,
-# the refund's PENDING and CONFIRMED, the reply, run_finished. Crash after
-# each of the first five (after the sixth there is nothing left to lose).
-@pytest.mark.parametrize("n", range(1, 6))
+# A clean run of the agent logs 8 events: run_started, the charge lookup,
+# the claim's PENDING and CONFIRMED, the refund's PENDING and CONFIRMED, the
+# reply, run_finished. Crash after each of the first seven (after the eighth
+# there is nothing left to lose).
+@pytest.mark.parametrize("n", range(1, 8))
 def test_a_crash_anywhere_resumes_to_exactly_one_refund(agent, stripe_server, store, n):
     charge = stripe_server.create_charge(2500)
     with crash_after(store, n):
@@ -177,15 +216,16 @@ def test_a_crash_anywhere_resumes_to_exactly_one_refund(agent, stripe_server, st
     # Only what wasn't logged ran: the refund is never asked for twice when
     # its outcome was logged, and at most twice (same key) when it wasn't.
     posts = stripe_server.state()["requests"].get("POST /v1/refunds", 0)
-    assert posts == 1  # at n=3 Stripe made it before the crash and reconcile found it
-    assert res.stats.replayed_calls + res.stats.live_calls == 3
+    assert posts == 1  # at n=5 Stripe made it before the crash and reconcile found it
+    assert stripe_server.charge(charge["id"])["metadata"] == {"refund_claim": "T-1"}
+    assert res.stats.replayed_calls + res.stats.live_calls == 4
     replays_strictly(store, run_id, agent, out)
 
 
 def test_the_crash_that_matters_is_settled_by_reconcile(agent, stripe_server, store):
     """Killed after Stripe made the refund, before CONFIRMED was logged."""
     charge = stripe_server.create_charge(700)
-    with crash_after(store, 3):  # run_started, lookup, PENDING
+    with crash_after(store, 5):  # run_started, lookup, the claim, the refund's PENDING
         with ledger.record(store) as rec:
             agent.invoke(ticket(charge))
     # The crash hit the CONFIRMED append, so Stripe has the refund.
@@ -194,7 +234,7 @@ def test_the_crash_that_matters_is_settled_by_reconcile(agent, stripe_server, st
     with ledger.resume(rec.run_id, store):
         agent.invoke(ticket(charge))
     assert stripe_server.state()["requests"]["POST /v1/refunds"] == 1  # not asked again
-    settled = [ev.effect for ev in store.events(rec.run_id) if body_kind(ev) == "effect"][-1]
+    settled = effect_events(store, rec.run_id)[-1]
     assert settled.phase == pb.EffectCall.PHASE_CONFIRMED and settled.reconciled
     assert len(stripe_server.refunds_of(charge["id"])) == 1
 

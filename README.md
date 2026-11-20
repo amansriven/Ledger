@@ -180,7 +180,7 @@ The finished log is a complete recording: it replays strictly like any other. A 
 
 ### Refund agent
 
-`examples/refund_agent.py` turns a support ticket into a Stripe refund: `lookup` reads the charge (a tool), `decide` applies the refund policy in code, `refund` is the effect (its `reconcile` finds a refund by the key in its metadata), and `reply` has the LLM draft the answer. It runs with the official `stripe` SDK against `ledger.testing.fake_stripe`, a fake Stripe API that honours idempotency keys and can drop a connection before or after applying a request, or answer 500. To point it at Stripe itself, set `STRIPE_API_BASE=` (empty) and put a test key in `STRIPE_SECRET_KEY`, in the environment or in `.env` at the repo root (git ignores it). Only that one variable is read from `.env`, live keys are refused, and the fake server never gets the real key.
+`examples/refund_agent.py` turns a support ticket into a Stripe refund: `lookup` reads the charge (a tool), and `decide` applies the refund policy in code, leaving a charge another ticket has claimed to that ticket. `refund` first claims the charge for this ticket in its Stripe metadata (an effect whose compensation releases the claim), then creates the refund (an effect whose `reconcile` finds a refund by the key in its metadata). Last, `reply` has the LLM draft the answer. If Stripe refuses the refund, the saga releases the claim, so another ticket or a person can take over. It runs with the official `stripe` SDK against `ledger.testing.fake_stripe`, a fake Stripe API that honours idempotency keys and can drop a connection before or after applying a request, or answer 500. To point it at Stripe itself, set `STRIPE_API_BASE=` (empty) and put a test key in `STRIPE_SECRET_KEY`, in the environment or in `.env` at the repo root (git ignores it). Only that one variable is read from `.env`, live keys are refused, and the fake server never gets the real key.
 
 ```sh
 uv run python -m ledger.testing.fake_stripe --port 12111 &
@@ -191,7 +191,7 @@ uv run python -m examples.refund_agent          # seeds a charge, records one re
 `tests/test_refund_agent.py` covers:
 - a dropped or failed attempt (before or after Stripe applied it, and a 500) still ends in exactly one refund;
 - a refund lost every time ends in doubt, with still one refund at Stripe;
-- a refused refund is logged as `FAILED`;
+- a refused refund is logged as `FAILED`, the claim is released, and a replay answers the release from the log;
 - a replay with Stripe gone makes no request.
 
 `tests/test_saga.py` checks sagas on a booking graph with an idempotent fake API:

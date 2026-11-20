@@ -3,9 +3,13 @@
     lookup -> decide -> refund -> reply
 
 ``lookup`` reads the charge from Stripe (a ``ledger.tool``: reading twice is
-harmless). ``decide`` applies the refund policy in code. ``refund`` creates
-the refund through ``ledger.effect``, so it is made once per run whatever
-fails around it: every attempt carries the same idempotency key, derived
+harmless). ``decide`` applies the refund policy in code, and leaves a charge
+another ticket has claimed to that ticket. ``refund`` first claims the charge
+for this ticket (an effect writing the charge's metadata), then creates the
+refund. If the refund fails for good (Stripe refuses it), the run's saga
+releases the claim again, so another ticket or a person can take over. Both
+are ``ledger.effect`` calls, so each is made once per run whatever fails
+around it. For the refund: every attempt carries the same idempotency key, derived
 from the run id and the step, and the key also goes in the refund's
 metadata. After a crash, ``ledger.resume`` looks the refund up by that
 metadata before trying again. ``reply`` has the LLM draft the
@@ -42,6 +46,8 @@ from ledger.intercept.langgraph import InstrumentedGraph
 AUTO_REFUND_LIMIT = 50_000
 REASONS = ("duplicate", "fraudulent", "requested_by_customer")
 FAKE_STRIPE = "http://127.0.0.1:12111"
+# Charge metadata key naming the ticket that is refunding the charge.
+CLAIM = "refund_claim"
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 # Stripe errors after which a refund may or may not have been made: retrying
@@ -109,6 +115,9 @@ def decide(ticket: Ticket, charge: dict[str, Any]) -> dict[str, Any]:
         return {"refund": False, "amount": 0, "why": f"charge is {charge.get('status')}"}
     if left == 0:
         return {"refund": False, "amount": 0, "why": "already fully refunded"}
+    claimed_by = (charge.get("metadata") or {}).get(CLAIM)
+    if claimed_by and claimed_by != ticket.get("ticket_id"):
+        return {"refund": False, "amount": 0, "why": f"ticket {claimed_by} is refunding it"}
     if amount > AUTO_REFUND_LIMIT:
         return {"refund": False, "amount": amount, "why": "over the automatic limit; sent to a human"}
     if ticket.get("reason", "requested_by_customer") not in REASONS:
@@ -134,6 +143,21 @@ def build_builder(llm: Any, client: stripe.StripeClient, *, model: str) -> State
                 return found
         return None
 
+    def release_claim(
+        claimed: dict[str, Any], charge_id: str, ticket_id: str, *, idempotency_key: str
+    ) -> dict[str, Any]:
+        """Compensation for claim_charge: drop the claim (Stripe removes a
+        metadata key set to an empty string)."""
+        return client.v1.charges.update(
+            charge_id, {"metadata": {CLAIM: ""}}, {"idempotency_key": idempotency_key}
+        ).to_dict()
+
+    @ledger.effect(name="stripe.charges.claim", retry_on=IN_DOUBT, compensate=release_claim)
+    def claim_charge(charge_id: str, ticket_id: str, *, idempotency_key: str) -> dict[str, Any]:
+        return client.v1.charges.update(
+            charge_id, {"metadata": {CLAIM: ticket_id}}, {"idempotency_key": idempotency_key}
+        ).to_dict()
+
     @ledger.effect(name="stripe.refunds.create", retry_on=IN_DOUBT, reconcile=find_refund)
     def create_refund(
         charge_id: str, amount: int, reason: str, ticket_id: str, *, idempotency_key: str
@@ -158,6 +182,7 @@ def build_builder(llm: Any, client: stripe.StripeClient, *, model: str) -> State
         decision = state["decision"]
         if not decision["refund"]:
             return {"refund": None}
+        claim_charge(state["charge_id"], state["ticket_id"])
         return {
             "refund": create_refund(
                 state["charge_id"],
