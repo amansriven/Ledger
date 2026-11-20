@@ -45,6 +45,8 @@ class Mode(enum.Enum):
     RECORD = "record"
     REPLAY = "replay"
     FORK = "fork"
+    # Continuing a crashed or failed recording in the same run (ledger.resume).
+    RESUME = "resume"
 
     @property
     def proto(self) -> int:
@@ -52,6 +54,8 @@ class Mode(enum.Enum):
             Mode.RECORD: pb.MODE_RECORD,
             Mode.REPLAY: pb.MODE_REPLAY,
             Mode.FORK: pb.MODE_FORK,
+            # A resumed run is still the recording; it gets RunResumed events.
+            Mode.RESUME: pb.MODE_RECORD,
         }[self]
 
 
@@ -139,8 +143,11 @@ class Session:
         # "module:attr" of the graph, set by the CLI and logged in RunStarted.
         self.graph_ref: str = ""
         # Whether an effect (ledger.effect) may run live. Always for a
-        # recording; a replay or fork has to ask for it.
-        self.live_effects = mode is Mode.RECORD
+        # recording and its resumes; a replay or fork has to ask for it.
+        self.live_effects = mode in (Mode.RECORD, Mode.RESUME)
+        # Set by ledger.resume: which resume this is, and how the run had ended.
+        self.resume_attempt = 0
+        self.previous_error: pb.Error | None = None
         self._counters: dict[tuple[str, int, str, str], int] = {}
         self._rngs: dict[tuple[str, int, str, str], random.Random] = {}
         self._lock = threading.Lock()
@@ -178,6 +185,9 @@ class Session:
         return self.store.append(self.run_id, event)
 
     def run_started(self, graph_input: Any) -> None:
+        if self.mode is Mode.RESUME:
+            self._run_resumed(graph_input)
+            return
         ev = new_event()
         ev.run_started.CopyFrom(
             pb.RunStarted(
@@ -187,6 +197,18 @@ class Session:
                 graph=self.graph_ref,
             )
         )
+        self.append(ev)
+
+    def _run_resumed(self, graph_input: Any) -> None:
+        assert self.replay_index is not None
+        payload = make_payload(graph_input)
+        recorded = self.replay_index.input
+        if recorded is not None and payload.sha256 != recorded.sha256:
+            raise ValueError(f"resume of {self.run_id} needs the input the run started with")
+        ev = new_event()
+        ev.run_resumed.attempt = self.resume_attempt
+        if self.previous_error is not None:
+            ev.run_resumed.previous_error.CopyFrom(self.previous_error)
         self.append(ev)
 
     def run_finished(self, output: Any = None, error: BaseException | None = None) -> None:

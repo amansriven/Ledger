@@ -2,28 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 import pytest
-from openai import OpenAI
 
 import ledger
 from examples import refund_agent
 from ledger.core.events import body_kind, load_payload, pb
-from ledger.testing.fake_stripe import FakeStripeServer
-
-
-@pytest.fixture
-def stripe_server() -> Iterator[FakeStripeServer]:
-    with FakeStripeServer() as server:
-        yield server
-
-
-@pytest.fixture
-def agent(fake_server, stripe_server):
-    llm = ledger.wrap(OpenAI(base_url=f"{fake_server.base_url}/v1", api_key="x", max_retries=0))
-    client = refund_agent.stripe_client("sk_test_fake", stripe_server.base_url)
-    return refund_agent.build_graph(llm, client, model="fake-model")
 
 
 @pytest.fixture(autouse=True)
@@ -157,3 +140,4 @@ def test_the_real_key_is_read_only_for_stripe_itself(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="STRIPE_SECRET_KEY"):
         refund_agent.stripe_settings(tmp_path / "missing.env")
     assert "OTHER" not in __import__("os").environ
+

@@ -25,17 +25,17 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0c\x65vents.proto\x12\tledger.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"X\n\x07StepRef\x12\x11\n\tnamespace\x18\x01 \x01(\t\x12\x11\n\tsuperstep\x18\x02 \x01(\x03\x12\x0c\n\x04node\x18\x03 \x01(\t\x12\x0c\n\x04path\x18\x04 \x01(\t\x12\x0b\n\x03seq\x18\x05 \x01(\x03\"\'\n\x07Payload\x12\x0e\n\x06sha256\x18\x01 \x01(\t\x12\x0c\n\x04json\x18\x02 \x01(\x0c\"H\n\x05\x45rror\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\x0f\n\x07message\x18\x02 \x01(\t\x12 \n\x04\x61rgs\x18\x03 \x01(\x0b\x32\x12.ledger.v1.Payload\"t\n\nRunStarted\x12\x1d\n\x04mode\x18\x01 \x01(\x0e\x32\x0f.ledger.v1.Mode\x12!\n\x05input\x18\x02 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\x15\n\rsource_run_id\x18\x03 \x01(\t\x12\r\n\x05graph\x18\x04 \x01(\t\"R\n\x0bRunFinished\x12\"\n\x06output\x18\x01 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\x1f\n\x05\x65rror\x18\x02 \x01(\x0b\x32\x10.ledger.v1.Error\"\xd2\x01\n\x07LLMCall\x12\x10\n\x08\x62\x61se_url\x18\x01 \x01(\t\x12\x11\n\toperation\x18\x02 \x01(\t\x12\r\n\x05model\x18\x03 \x01(\t\x12#\n\x07request\x18\x04 \x01(\x0b\x32\x12.ledger.v1.Payload\x12$\n\x08response\x18\x05 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\x1f\n\x05\x65rror\x18\x06 \x01(\x0b\x32\x10.ledger.v1.Error\x12\x12\n\nlatency_us\x18\x07 \x01(\x03\x12\x13\n\x0brequest_key\x18\x08 \x01(\t\"\xa5\x01\n\x08ToolCall\x12\x0c\n\x04name\x18\x01 \x01(\t\x12 \n\x04\x61rgs\x18\x02 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\"\n\x06result\x18\x03 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\x1f\n\x05\x65rror\x18\x04 \x01(\x0b\x32\x10.ledger.v1.Error\x12\x12\n\nlatency_us\x18\x05 \x01(\x03\x12\x10\n\x08\x61rgs_key\x18\x06 \x01(\t\";\n\x06Nondet\x12\x0e\n\x06source\x18\x01 \x01(\t\x12!\n\x05value\x18\x02 \x01(\x0b\x32\x12.ledger.v1.Payload\"\xd8\x02\n\nEffectCall\x12*\n\x05phase\x18\x01 \x01(\x0e\x32\x1b.ledger.v1.EffectCall.Phase\x12\x0c\n\x04name\x18\x02 \x01(\t\x12 \n\x04\x61rgs\x18\x03 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\x10\n\x08\x61rgs_key\x18\x04 \x01(\t\x12\x17\n\x0fidempotency_key\x18\x05 \x01(\t\x12\"\n\x06result\x18\x06 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\x1f\n\x05\x65rror\x18\x07 \x01(\x0b\x32\x10.ledger.v1.Error\x12\x12\n\nlatency_us\x18\x08 \x01(\x03\x12\x10\n\x08\x61ttempts\x18\t \x01(\x05\"X\n\x05Phase\x12\x15\n\x11PHASE_UNSPECIFIED\x10\x00\x12\x11\n\rPHASE_PENDING\x10\x01\x12\x13\n\x0fPHASE_CONFIRMED\x10\x02\x12\x10\n\x0cPHASE_FAILED\x10\x03\"g\n\x08\x44iverged\x12+\n\x06reason\x18\x01 \x01(\x0e\x32\x1b.ledger.v1.DivergenceReason\x12\x0c\n\x04kind\x18\x02 \x01(\t\x12\x10\n\x08recorded\x18\x03 \x01(\t\x12\x0e\n\x06\x61\x63tual\x18\x04 \x01(\t\"\xba\x03\n\x05\x45vent\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\r\n\x05index\x18\x02 \x01(\x03\x12/\n\x0brecorded_at\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12 \n\x04step\x18\x04 \x01(\x0b\x32\x12.ledger.v1.StepRef\x12\x10\n\x08\x66rom_log\x18\x05 \x01(\x08\x12,\n\x0brun_started\x18\n \x01(\x0b\x32\x15.ledger.v1.RunStartedH\x00\x12.\n\x0crun_finished\x18\x0b \x01(\x0b\x32\x16.ledger.v1.RunFinishedH\x00\x12&\n\x08llm_call\x18\x0c \x01(\x0b\x32\x12.ledger.v1.LLMCallH\x00\x12(\n\ttool_call\x18\r \x01(\x0b\x32\x13.ledger.v1.ToolCallH\x00\x12#\n\x06nondet\x18\x0e \x01(\x0b\x32\x11.ledger.v1.NondetH\x00\x12\'\n\x08\x64iverged\x18\x0f \x01(\x0b\x32\x13.ledger.v1.DivergedH\x00\x12\'\n\x06\x65\x66\x66\x65\x63t\x18\x10 \x01(\x0b\x32\x15.ledger.v1.EffectCallH\x00\x42\x06\n\x04\x62ody*M\n\x04Mode\x12\x14\n\x10MODE_UNSPECIFIED\x10\x00\x12\x0f\n\x0bMODE_RECORD\x10\x01\x12\x0f\n\x0bMODE_REPLAY\x10\x02\x12\r\n\tMODE_FORK\x10\x03*\xe2\x01\n\x10\x44ivergenceReason\x12!\n\x1d\x44IVERGENCE_REASON_UNSPECIFIED\x10\x00\x12%\n!DIVERGENCE_REASON_CHANGED_REQUEST\x10\x01\x12%\n!DIVERGENCE_REASON_UNRECORDED_CALL\x10\x02\x12\"\n\x1e\x44IVERGENCE_REASON_CHANGED_KIND\x10\x03\x12\x1c\n\x18\x44IVERGENCE_REASON_EDITED\x10\x04\x12\x1b\n\x17\x44IVERGENCE_REASON_RERUN\x10\x05\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0c\x65vents.proto\x12\tledger.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"X\n\x07StepRef\x12\x11\n\tnamespace\x18\x01 \x01(\t\x12\x11\n\tsuperstep\x18\x02 \x01(\x03\x12\x0c\n\x04node\x18\x03 \x01(\t\x12\x0c\n\x04path\x18\x04 \x01(\t\x12\x0b\n\x03seq\x18\x05 \x01(\x03\"\'\n\x07Payload\x12\x0e\n\x06sha256\x18\x01 \x01(\t\x12\x0c\n\x04json\x18\x02 \x01(\x0c\"H\n\x05\x45rror\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\x0f\n\x07message\x18\x02 \x01(\t\x12 \n\x04\x61rgs\x18\x03 \x01(\x0b\x32\x12.ledger.v1.Payload\"t\n\nRunStarted\x12\x1d\n\x04mode\x18\x01 \x01(\x0e\x32\x0f.ledger.v1.Mode\x12!\n\x05input\x18\x02 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\x15\n\rsource_run_id\x18\x03 \x01(\t\x12\r\n\x05graph\x18\x04 \x01(\t\"G\n\nRunResumed\x12\x0f\n\x07\x61ttempt\x18\x01 \x01(\x05\x12(\n\x0eprevious_error\x18\x02 \x01(\x0b\x32\x10.ledger.v1.Error\"R\n\x0bRunFinished\x12\"\n\x06output\x18\x01 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\x1f\n\x05\x65rror\x18\x02 \x01(\x0b\x32\x10.ledger.v1.Error\"\xd2\x01\n\x07LLMCall\x12\x10\n\x08\x62\x61se_url\x18\x01 \x01(\t\x12\x11\n\toperation\x18\x02 \x01(\t\x12\r\n\x05model\x18\x03 \x01(\t\x12#\n\x07request\x18\x04 \x01(\x0b\x32\x12.ledger.v1.Payload\x12$\n\x08response\x18\x05 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\x1f\n\x05\x65rror\x18\x06 \x01(\x0b\x32\x10.ledger.v1.Error\x12\x12\n\nlatency_us\x18\x07 \x01(\x03\x12\x13\n\x0brequest_key\x18\x08 \x01(\t\"\xa5\x01\n\x08ToolCall\x12\x0c\n\x04name\x18\x01 \x01(\t\x12 \n\x04\x61rgs\x18\x02 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\"\n\x06result\x18\x03 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\x1f\n\x05\x65rror\x18\x04 \x01(\x0b\x32\x10.ledger.v1.Error\x12\x12\n\nlatency_us\x18\x05 \x01(\x03\x12\x10\n\x08\x61rgs_key\x18\x06 \x01(\t\";\n\x06Nondet\x12\x0e\n\x06source\x18\x01 \x01(\t\x12!\n\x05value\x18\x02 \x01(\x0b\x32\x12.ledger.v1.Payload\"\xec\x02\n\nEffectCall\x12*\n\x05phase\x18\x01 \x01(\x0e\x32\x1b.ledger.v1.EffectCall.Phase\x12\x0c\n\x04name\x18\x02 \x01(\t\x12 \n\x04\x61rgs\x18\x03 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\x10\n\x08\x61rgs_key\x18\x04 \x01(\t\x12\x17\n\x0fidempotency_key\x18\x05 \x01(\t\x12\"\n\x06result\x18\x06 \x01(\x0b\x32\x12.ledger.v1.Payload\x12\x1f\n\x05\x65rror\x18\x07 \x01(\x0b\x32\x10.ledger.v1.Error\x12\x12\n\nlatency_us\x18\x08 \x01(\x03\x12\x10\n\x08\x61ttempts\x18\t \x01(\x05\x12\x12\n\nreconciled\x18\n \x01(\x08\"X\n\x05Phase\x12\x15\n\x11PHASE_UNSPECIFIED\x10\x00\x12\x11\n\rPHASE_PENDING\x10\x01\x12\x13\n\x0fPHASE_CONFIRMED\x10\x02\x12\x10\n\x0cPHASE_FAILED\x10\x03\"g\n\x08\x44iverged\x12+\n\x06reason\x18\x01 \x01(\x0e\x32\x1b.ledger.v1.DivergenceReason\x12\x0c\n\x04kind\x18\x02 \x01(\t\x12\x10\n\x08recorded\x18\x03 \x01(\t\x12\x0e\n\x06\x61\x63tual\x18\x04 \x01(\t\"\xe8\x03\n\x05\x45vent\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\r\n\x05index\x18\x02 \x01(\x03\x12/\n\x0brecorded_at\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12 \n\x04step\x18\x04 \x01(\x0b\x32\x12.ledger.v1.StepRef\x12\x10\n\x08\x66rom_log\x18\x05 \x01(\x08\x12,\n\x0brun_started\x18\n \x01(\x0b\x32\x15.ledger.v1.RunStartedH\x00\x12.\n\x0crun_finished\x18\x0b \x01(\x0b\x32\x16.ledger.v1.RunFinishedH\x00\x12&\n\x08llm_call\x18\x0c \x01(\x0b\x32\x12.ledger.v1.LLMCallH\x00\x12(\n\ttool_call\x18\r \x01(\x0b\x32\x13.ledger.v1.ToolCallH\x00\x12#\n\x06nondet\x18\x0e \x01(\x0b\x32\x11.ledger.v1.NondetH\x00\x12\'\n\x08\x64iverged\x18\x0f \x01(\x0b\x32\x13.ledger.v1.DivergedH\x00\x12\'\n\x06\x65\x66\x66\x65\x63t\x18\x10 \x01(\x0b\x32\x15.ledger.v1.EffectCallH\x00\x12,\n\x0brun_resumed\x18\x11 \x01(\x0b\x32\x15.ledger.v1.RunResumedH\x00\x42\x06\n\x04\x62ody*M\n\x04Mode\x12\x14\n\x10MODE_UNSPECIFIED\x10\x00\x12\x0f\n\x0bMODE_RECORD\x10\x01\x12\x0f\n\x0bMODE_REPLAY\x10\x02\x12\r\n\tMODE_FORK\x10\x03*\xe2\x01\n\x10\x44ivergenceReason\x12!\n\x1d\x44IVERGENCE_REASON_UNSPECIFIED\x10\x00\x12%\n!DIVERGENCE_REASON_CHANGED_REQUEST\x10\x01\x12%\n!DIVERGENCE_REASON_UNRECORDED_CALL\x10\x02\x12\"\n\x1e\x44IVERGENCE_REASON_CHANGED_KIND\x10\x03\x12\x1c\n\x18\x44IVERGENCE_REASON_EDITED\x10\x04\x12\x1b\n\x17\x44IVERGENCE_REASON_RERUN\x10\x05\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'events_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_MODE']._serialized_start=1806
-  _globals['_MODE']._serialized_end=1883
-  _globals['_DIVERGENCEREASON']._serialized_start=1886
-  _globals['_DIVERGENCEREASON']._serialized_end=2112
+  _globals['_MODE']._serialized_start=1945
+  _globals['_MODE']._serialized_end=2022
+  _globals['_DIVERGENCEREASON']._serialized_start=2025
+  _globals['_DIVERGENCEREASON']._serialized_end=2251
   _globals['_STEPREF']._serialized_start=60
   _globals['_STEPREF']._serialized_end=148
   _globals['_PAYLOAD']._serialized_start=150
@@ -44,20 +44,22 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_ERROR']._serialized_end=263
   _globals['_RUNSTARTED']._serialized_start=265
   _globals['_RUNSTARTED']._serialized_end=381
-  _globals['_RUNFINISHED']._serialized_start=383
-  _globals['_RUNFINISHED']._serialized_end=465
-  _globals['_LLMCALL']._serialized_start=468
-  _globals['_LLMCALL']._serialized_end=678
-  _globals['_TOOLCALL']._serialized_start=681
-  _globals['_TOOLCALL']._serialized_end=846
-  _globals['_NONDET']._serialized_start=848
-  _globals['_NONDET']._serialized_end=907
-  _globals['_EFFECTCALL']._serialized_start=910
-  _globals['_EFFECTCALL']._serialized_end=1254
-  _globals['_EFFECTCALL_PHASE']._serialized_start=1166
-  _globals['_EFFECTCALL_PHASE']._serialized_end=1254
-  _globals['_DIVERGED']._serialized_start=1256
-  _globals['_DIVERGED']._serialized_end=1359
-  _globals['_EVENT']._serialized_start=1362
-  _globals['_EVENT']._serialized_end=1804
+  _globals['_RUNRESUMED']._serialized_start=383
+  _globals['_RUNRESUMED']._serialized_end=454
+  _globals['_RUNFINISHED']._serialized_start=456
+  _globals['_RUNFINISHED']._serialized_end=538
+  _globals['_LLMCALL']._serialized_start=541
+  _globals['_LLMCALL']._serialized_end=751
+  _globals['_TOOLCALL']._serialized_start=754
+  _globals['_TOOLCALL']._serialized_end=919
+  _globals['_NONDET']._serialized_start=921
+  _globals['_NONDET']._serialized_end=980
+  _globals['_EFFECTCALL']._serialized_start=983
+  _globals['_EFFECTCALL']._serialized_end=1347
+  _globals['_EFFECTCALL_PHASE']._serialized_start=1259
+  _globals['_EFFECTCALL_PHASE']._serialized_end=1347
+  _globals['_DIVERGED']._serialized_start=1349
+  _globals['_DIVERGED']._serialized_end=1452
+  _globals['_EVENT']._serialized_start=1455
+  _globals['_EVENT']._serialized_end=1943
 # @@protoc_insertion_point(module_scope)

@@ -71,6 +71,20 @@ message RunStarted {
   string graph = 4;
 }
 
+// A recording picked up again after it crashed or failed (ledger.resume).
+// The resume continues the same run, so idempotency keys stay the same.
+// Calls already in the log are answered from it and not logged again; calls
+// past it run live and are appended after this event. An effect the log
+// left PENDING is settled first: reconciled against the API, or called
+// again with its idempotency key. A RunFinished follows as usual.
+message RunResumed {
+  // 1 for the first resume of the run, 2 for the next, and so on.
+  int32 attempt = 1;
+  // The error the run had ended with, if it failed; unset if it stopped
+  // without a RunFinished (the process died).
+  Error previous_error = 2;
+}
+
 message RunFinished {
   Payload output = 1;
   Error error = 2;
@@ -143,6 +157,9 @@ message EffectCall {
   int64 latency_us = 8;
   // Attempts made so far, each with the same idempotency key.
   int32 attempts = 9;
+  // On a CONFIRMED event written by a resume: the outcome was found by the
+  // effect's reconcile function, without calling the effect again.
+  bool reconciled = 10;
 }
 
 enum DivergenceReason {
@@ -198,5 +215,6 @@ message Event {
     Nondet nondet = 14;
     Diverged diverged = 15;
     EffectCall effect = 16;
+    RunResumed run_resumed = 17;
   }
 }

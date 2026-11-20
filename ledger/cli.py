@@ -1,4 +1,4 @@
-"""The ``ledger`` command: record, replay and fork runs of a LangGraph graph.
+"""The ``ledger`` command: record, replay, fork and resume runs of a LangGraph graph.
 
     ledger record -g examples.toy_pipeline:graph_from_env --input '{"topic": "fencing tokens"}'
     ledger runs
@@ -6,12 +6,13 @@
     ledger replay --all --live                # report divergences instead of failing
     ledger steps RUN_ID                       # the calls a fork can target
     ledger fork RUN_ID --edit 12='a different summary' --rerun 20
+    ledger resume --all                       # finish runs that crashed or failed
 
 ``-g/--graph`` names the graph as ``module:attr``: a compiled graph, or a
 function with no arguments that returns one. The current directory is on the
 import path. ``record`` logs the reference with the run, so ``replay`` and
-``fork`` find the graph again without ``-g``. Replays and forks take their
-input from the recording.
+``fork`` find the graph again without ``-g``. Replays, forks and resumes take
+their input from the recording.
 
 The event store is ``--db``, else ``$LEDGER_DB``, else ``ledger.db``.
 """
@@ -32,6 +33,7 @@ from ledger.core.store import EventStore
 from ledger.intercept.langgraph import InstrumentedGraph, instrument
 from ledger.replay.engine import RERUN, ReplayDivergence, ReplayMismatch, replay
 from ledger.replay.fork import fork, steps
+from ledger.replay.resume import resumable_runs, resume, run_status
 
 __all__ = ["main", "load_graph", "RunInfo", "list_runs"]
 
@@ -112,19 +114,16 @@ class RunInfo:
         self.calls = sum(_is_call(e) for e in events)
         self.live = sum(_is_call(e) and not e.from_log for e in events)
         self.diverged = sum(body_kind(e) == "diverged" for e in events)
-        if body_kind(last) != "run_finished":
-            self.status = "unfinished"
-        elif last.run_finished.HasField("error"):
-            self.status = "error"
-        else:
-            self.status = "ok"
+        self.resumed = sum(body_kind(e) == "run_resumed" for e in events)
+        self.status = run_status(events)[0]
 
     def __str__(self) -> str:
         source = f" of {self.source}" if self.source else ""
         diverged = f" diverged={self.diverged}" if self.diverged else ""
+        resumed = f" resumed={self.resumed}" if self.resumed else ""
         return (
             f"{self.run_id}  {self.mode}{source}  {self.status}  "
-            f"calls={self.calls} live={self.live}{diverged}"
+            f"calls={self.calls} live={self.live}{diverged}{resumed}"
         )
 
 
@@ -247,6 +246,32 @@ def cmd_replay(args: argparse.Namespace, store: EventStore) -> int:
     if len(run_ids) > 1:
         print(f"{identical}/{len(run_ids)} replayed identically")
     return 0 if identical == len(run_ids) else 1
+
+
+def cmd_resume(args: argparse.Namespace, store: EventStore) -> int:
+    if args.all:
+        run_ids = resumable_runs(store)
+        if not run_ids:
+            print("nothing to resume")
+            return 0
+    elif args.run_ids:
+        run_ids = args.run_ids
+    else:
+        raise CLIError("give run ids or --all")
+    failures = 0
+    for run_id in run_ids:
+        ref, graph = _graph_for(args, store, run_id)
+        try:
+            with resume(run_id, store) as session:
+                output = graph.invoke(_input_of(store, run_id))
+        except Exception as exc:  # report and go on to the next run
+            failures += 1
+            print(f"FAIL {run_id}  {type(exc).__name__}: {exc}")
+            continue
+        print(f"OK   {run_id}  resume {session.resume_attempt}  {_stats(session)}")
+        if args.show_output:
+            print(_show(output))
+    return 1 if failures else 0
 
 
 def _parse_step(text: str) -> str | int:
@@ -373,7 +398,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = argparse.ArgumentParser(
         prog="ledger",
-        description="Record, replay and fork LangGraph runs.",
+        description="Record, replay, fork and resume LangGraph runs.",
     )
     p.add_argument("--db", default=None, help=db_help)
     sub = p.add_subparsers(dest="cmd", required=True, metavar="COMMAND")
@@ -412,6 +437,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--rerun", action="append", default=[], metavar="STEP", help="run the call live again"
     )
     fk.set_defaults(func=cmd_fork)
+
+    rm = sub.add_parser(
+        "resume", parents=[common, graph, output],
+        help="finish recordings that crashed or failed, in the same run",
+        description="Calls already in the log are answered from it, effects it left "
+        "pending are settled, and the rest runs live. Exit 1 if any resume fails.",
+    )
+    rm.add_argument("run_ids", nargs="*", metavar="RUN_ID")
+    rm.add_argument("--all", action="store_true", help="resume every recording that didn't finish cleanly")
+    rm.set_defaults(func=cmd_resume)
 
     st = sub.add_parser("steps", parents=[common], help="list a run's calls")
     st.add_argument("run_id", metavar="RUN_ID")

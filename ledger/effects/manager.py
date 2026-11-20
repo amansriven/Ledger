@@ -40,7 +40,7 @@ from ledger.core.normalize import DEFAULT, Normalizer
 from ledger.core.session import Session, current_session
 from ledger.core.store import step_key
 from ledger.effects.idempotency import idempotency_key
-from ledger.intercept._common import GO_LIVE, answer_from_log
+from ledger.intercept._common import GO_LIVE, Settle, answer_from_log
 
 __all__ = ["EffectInDoubt", "LiveEffectRefused", "effect"]
 
@@ -106,7 +106,7 @@ class _Call:
         self.started = 0
 
     def from_log(self) -> Any:
-        """The recorded outcome, GO_LIVE, or LiveEffectRefused."""
+        """The recorded outcome, GO_LIVE, Settle (a resume), or LiveEffectRefused."""
         out = answer_from_log(
             self.session, self.step, "effect", self.request, _identity,
             match_key=self.body.args_key,
@@ -120,11 +120,12 @@ class _Call:
         return out
 
     def log(self, phase: int, *, result: Any = None, error: BaseException | None = None,
-            attempts: int = 0) -> None:
+            attempts: int = 0, reconciled: bool = False) -> None:
         body = pb.EffectCall()
         body.CopyFrom(self.body)
         body.phase = phase
         body.attempts = attempts
+        body.reconciled = reconciled
         if self.started:
             body.latency_us = (time.perf_counter_ns() - self.started) // 1000
         if error is not None:
@@ -147,6 +148,10 @@ class _Call:
         self.log(Phase.PHASE_FAILED, error=exc, attempts=attempts)
         self.session.count_call(live=True, kind="effect")
 
+    def reconciled(self, result: Any, attempts: int) -> None:
+        self.log(Phase.PHASE_CONFIRMED, result=result, attempts=attempts, reconciled=True)
+        self.session.count_call(live=True, kind="effect")
+
     def in_doubt(self, exc: BaseException, attempts: int) -> EffectInDoubt:
         self.log(Phase.PHASE_PENDING, error=exc, attempts=attempts)
         self.session.count_call(live=True, kind="effect")
@@ -159,6 +164,27 @@ def _delay(backoff: float, attempt: int) -> float:
     return backoff * (2 ** (attempt - 1)) * random.uniform(0.5, 1.0)
 
 
+def _start(call: _Call) -> tuple[pb.Event | None, Any]:
+    """(the PENDING event a resume must settle, or None; an answer from the log, or GO_LIVE).
+
+    Logs PENDING when the effect is about to run for the first time.
+    """
+    if call.session.is_replay:
+        out = call.from_log()
+        if isinstance(out, Settle):
+            recorded = out.event.effect
+            if recorded.idempotency_key != call.body.idempotency_key:
+                raise RuntimeError(
+                    f"effect {recorded.name} at step {step_key(call.step)} was logged with "
+                    "a different idempotency key; refusing to settle it"
+                )
+            return out.event, GO_LIVE
+        if out is not GO_LIVE:
+            return None, out
+    call.begin()
+    return None, GO_LIVE
+
+
 def _wrap(
     fn: F,
     name: str,
@@ -166,9 +192,12 @@ def _wrap(
     retry_on: tuple[type[BaseException], ...],
     attempts: int,
     backoff: float,
+    reconcile: Callable[..., Any] | None,
 ) -> F:
     if not _accepts_key(fn):
         raise TypeError(f"effect {name} must accept an {KEY_ARG} keyword argument")
+    if reconcile is not None and not _accepts_key(reconcile):
+        raise TypeError(f"reconcile for effect {name} must accept an {KEY_ARG} keyword argument")
     if attempts < 1:
         raise ValueError("attempts must be at least 1")
 
@@ -181,23 +210,30 @@ def _wrap(
                 kwargs.setdefault(KEY_ARG, uuid.uuid4().hex)
                 return await fn(*args, **kwargs)
             call = _Call(session, name, normalizer, args, kwargs)
-            if session.is_replay:
-                out = call.from_log()
-                if out is not GO_LIVE:
-                    return out
-            call.begin()
+            settling, out = _start(call)
+            if out is not GO_LIVE:
+                return out
+            key = {KEY_ARG: call.body.idempotency_key}
+            done = settling.effect.attempts if settling is not None else 0
+            if settling is not None and reconcile is not None:
+                found = reconcile(*args, **kwargs, **key)
+                if inspect.isawaitable(found):
+                    found = await found
+                if found is not None:
+                    call.reconciled(found, done)
+                    return found
             for attempt in range(1, attempts + 1):
                 try:
-                    result = await fn(*args, **kwargs, **{KEY_ARG: call.body.idempotency_key})
+                    result = await fn(*args, **kwargs, **key)
                 except retry_on as exc:
                     if attempt == attempts:
-                        raise call.in_doubt(exc, attempt) from exc
+                        raise call.in_doubt(exc, done + attempt) from exc
                     await asyncio.sleep(_delay(backoff, attempt))
                 except Exception as exc:
-                    call.failed(exc, attempt)
+                    call.failed(exc, done + attempt)
                     raise
                 else:
-                    call.confirmed(result, attempt)
+                    call.confirmed(result, done + attempt)
                     return result
             raise AssertionError("unreachable")
 
@@ -211,23 +247,28 @@ def _wrap(
             kwargs.setdefault(KEY_ARG, uuid.uuid4().hex)
             return fn(*args, **kwargs)
         call = _Call(session, name, normalizer, args, kwargs)
-        if session.is_replay:
-            out = call.from_log()
-            if out is not GO_LIVE:
-                return out
-        call.begin()
+        settling, out = _start(call)
+        if out is not GO_LIVE:
+            return out
+        key = {KEY_ARG: call.body.idempotency_key}
+        done = settling.effect.attempts if settling is not None else 0
+        if settling is not None and reconcile is not None:
+            found = reconcile(*args, **kwargs, **key)
+            if found is not None:
+                call.reconciled(found, done)
+                return found
         for attempt in range(1, attempts + 1):
             try:
-                result = fn(*args, **kwargs, **{KEY_ARG: call.body.idempotency_key})
+                result = fn(*args, **kwargs, **key)
             except retry_on as exc:
                 if attempt == attempts:
-                    raise call.in_doubt(exc, attempt) from exc
+                    raise call.in_doubt(exc, done + attempt) from exc
                 time.sleep(_delay(backoff, attempt))
             except Exception as exc:
-                call.failed(exc, attempt)
+                call.failed(exc, done + attempt)
                 raise
             else:
-                call.confirmed(result, attempt)
+                call.confirmed(result, done + attempt)
                 return result
         raise AssertionError("unreachable")
 
@@ -244,6 +285,7 @@ def effect(
     retry_on: tuple[type[BaseException], ...] = ...,
     attempts: int = ...,
     backoff: float = ...,
+    reconcile: Callable[..., Any] | None = None,
     normalizer: Normalizer | None = None,
 ) -> Callable[[F], F]: ...
 
@@ -255,6 +297,7 @@ def effect(
     retry_on: tuple[type[BaseException], ...] = (ConnectionError, TimeoutError),
     attempts: int = 3,
     backoff: float = 0.25,
+    reconcile: Callable[..., Any] | None = None,
     normalizer: Normalizer | None = None,
 ) -> Any:
     """Make a side-effecting function happen once per run step.
@@ -266,6 +309,12 @@ def effect(
     effect did not happen. ``attempts`` counts the first try; retries wait
     ``backoff`` seconds, doubling, with jitter.
 
+    ``reconcile`` is used when a resume finds the effect PENDING in the log.
+    It takes the effect's arguments and ``idempotency_key`` and returns the
+    effect's result if the API shows it happened, or None if it didn't. Without
+    it (or when it returns None) the resume calls the effect again with the
+    same key, which is safe as long as the API still remembers the key.
+
     Outside a session the function runs as is, with a fresh random key
     unless the caller passes one.
     """
@@ -273,7 +322,7 @@ def effect(
     def decorate(f: F) -> F:
         return _wrap(
             f, name or f"{f.__module__}.{f.__qualname__}", normalizer or DEFAULT,
-            tuple(retry_on), attempts, backoff,
+            tuple(retry_on), attempts, backoff, reconcile,
         )
 
     return decorate(fn) if fn is not None else decorate

@@ -11,6 +11,8 @@
         graph.invoke(inputs)
     with ledger.fork(run_id, at=step, edit="other text"):   # counterfactual
         graph.invoke(inputs)
+    with ledger.resume(run_id):               # after a crash: same run, same keys
+        graph.invoke(inputs)
 
 Inside nodes, read the clock, ids and randomness through ``ledger.now()``,
 ``ledger.time()``, ``ledger.uuid4()`` and ``ledger.rng()`` so replays see the
@@ -35,6 +37,7 @@ from ledger.replay.engine import (
     replay,
 )
 from ledger.replay.fork import StepInfo, fork, steps
+from ledger.replay.resume import RunAlreadyFinished, resumable_runs, resume
 
 __all__ = [
     "DivergencePoint",
@@ -49,6 +52,7 @@ __all__ = [
     "ReplayDivergence",
     "ReplayMismatch",
     "ReplayedError",
+    "RunAlreadyFinished",
     "Session",
     "StepInfo",
     "current_session",
@@ -58,6 +62,8 @@ __all__ = [
     "now",
     "record",
     "replay",
+    "resumable_runs",
+    "resume",
     "rng",
     "steps",
     "time",
