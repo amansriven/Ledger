@@ -58,7 +58,13 @@ __all__ = [
     "replayed_exception",
 ]
 
-CALL_KINDS = ("llm_call", "tool_call", "nondet")
+# Effects log a PENDING event and then their outcome at the same step; the
+# index keeps the last one.
+CALL_KINDS = ("llm_call", "tool_call", "nondet", "effect")
+# The field holding a call's outcome, per kind.
+OUTCOME_FIELD = {
+    "llm_call": "response", "tool_call": "result", "nondet": "value", "effect": "result"
+}
 
 OnDivergence = Literal["raise", "live"]
 
@@ -235,6 +241,8 @@ def _recorded_match(event: pb.Event) -> tuple[str, str]:
         return event.tool_call.args_key, event.tool_call.args.sha256
     if kind == "nondet":
         return event.nondet.source, event.nondet.source
+    if kind == "effect":
+        return event.effect.args_key, event.effect.args.sha256
     return "", ""
 
 
@@ -433,7 +441,7 @@ def apply_edit(recorded: pb.Event, edit: Any) -> Any:
     """
     kind = body_kind(recorded)
     body = getattr(recorded, kind)
-    field = {"llm_call": "response", "tool_call": "result", "nondet": "value"}[kind]
+    field = OUTCOME_FIELD[kind]
     failed = kind != "nondet" and body.HasField("error")
     old = None if failed else load_payload(getattr(body, field))
     value = edit(copy.deepcopy(old)) if callable(edit) else edit
@@ -463,6 +471,7 @@ def replay(
     *,
     strict: bool = True,
     on_divergence: OnDivergence = "raise",
+    live_effects: bool = False,
 ) -> Iterator[Session]:
     """Replay ``source_run_id``: every intercepted call is answered from its log.
 
@@ -477,10 +486,15 @@ def replay(
     downstream of it run live instead (see the module docstring), and
     nothing raises. ``session.divergences`` lists where the replay diverged,
     including recorded calls it skipped.
+
+    Effects (``ledger.effect``) are answered from the log like any call. An
+    effect that would have to run live raises ``LiveEffectRefused`` unless
+    ``live_effects`` is true.
     """
     with replay_session(
         source_run_id, store, run_id,
         mode=Mode.REPLAY, strict=strict, on_divergence=on_divergence,
+        live_effects=live_effects,
     ) as session:
         yield session
 
@@ -495,6 +509,7 @@ def replay_session(
     strict: bool = True,
     on_divergence: OnDivergence = "raise",
     forks: Mapping[str, Any] | None = None,
+    live_effects: bool = False,
 ) -> Iterator[Session]:
     """A replay or fork session; ``replay`` and ``fork`` are the public forms."""
     owns_store = store is None
@@ -512,6 +527,7 @@ def replay_session(
         session = Session(
             store, run_id, mode, source_run_id=source_run_id, replay_index=index
         )
+        session.live_effects = live_effects
         with activate(session):
             yield session
         _check_exit(index, source_run_id, strict=strict)

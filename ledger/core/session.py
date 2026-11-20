@@ -138,6 +138,9 @@ class Session:
         self.output_sha256: str = ""
         # "module:attr" of the graph, set by the CLI and logged in RunStarted.
         self.graph_ref: str = ""
+        # Whether an effect (ledger.effect) may run live. Always for a
+        # recording; a replay or fork has to ask for it.
+        self.live_effects = mode is Mode.RECORD
         self._counters: dict[tuple[str, int, str, str], int] = {}
         self._rngs: dict[tuple[str, int, str, str], random.Random] = {}
         self._lock = threading.Lock()

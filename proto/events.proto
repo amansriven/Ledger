@@ -111,6 +111,40 @@ message Nondet {
   Payload value = 2;
 }
 
+// A call with a side effect that must happen once (ledger.effect), such as a
+// refund. Logged write-ahead: a PENDING event is fsynced before the call
+// starts, then a CONFIRMED or FAILED event at the same step once its outcome
+// is known. A step left PENDING is in doubt: the call may or may not have
+// taken effect, and resume settles it against the API before going on.
+//
+// Every attempt sends the same idempotency key, derived from the run id and
+// the step, so an API that honours keys (Stripe does) applies it once.
+message EffectCall {
+  enum Phase {
+    PHASE_UNSPECIFIED = 0;
+    PHASE_PENDING = 1;
+    PHASE_CONFIRMED = 2;
+    // The API said no (a declined card, an invalid request): the effect
+    // definitely did not happen.
+    PHASE_FAILED = 3;
+  }
+  Phase phase = 1;
+  string name = 2;
+  // {"args": [...], "kwargs": {...}}, without the idempotency key.
+  Payload args = 3;
+  // SHA-256 of the normalized args; see LLMCall.request_key.
+  string args_key = 4;
+  string idempotency_key = 5;
+  // Set when CONFIRMED.
+  Payload result = 6;
+  // Set when FAILED. On a PENDING event, the last error that left the
+  // outcome unknown, if the call gave up.
+  Error error = 7;
+  int64 latency_us = 8;
+  // Attempts made so far, each with the same idempotency key.
+  int32 attempts = 9;
+}
+
 enum DivergenceReason {
   DIVERGENCE_REASON_UNSPECIFIED = 0;
   // The recording has a call of the same kind at this step, with a
@@ -134,7 +168,8 @@ enum DivergenceReason {
 // replay's run at the step, just before the call's own event.
 message Diverged {
   DivergenceReason reason = 1;
-  // Body kind of the call the replay made: "llm_call", "tool_call", "nondet".
+  // Body kind of the call the replay made: "llm_call", "tool_call", "nondet",
+  // "effect".
   string kind = 2;
   // Match key (or kind, for CHANGED_KIND) the recording has at this step.
   // Empty for UNRECORDED_CALL.
@@ -162,5 +197,6 @@ message Event {
     ToolCall tool_call = 13;
     Nondet nondet = 14;
     Diverged diverged = 15;
+    EffectCall effect = 16;
   }
 }

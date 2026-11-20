@@ -2,7 +2,7 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay), week 3.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. Exactly-once effects, blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay) done; M2 (exactly-once effects) under way, week 4.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key. Resuming a crashed run, saga compensation and the chaos benchmark come next; blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
 
 ## Integration
 
@@ -110,6 +110,31 @@ docker compose -f deploy/docker-compose.yml run --rm bench-replay   # no network
 
 Exit status is 0 only if every Ledger replay was identical.
 
+## Effects
+
+A tool that changes the world (a refund, a charge, an email) gets `@ledger.effect` instead of `@ledger.tool`:
+
+```python
+@ledger.effect(name="stripe.refunds.create", retry_on=(stripe.APIConnectionError, stripe.APIError))
+def create_refund(charge_id: str, amount: int, *, idempotency_key: str) -> dict:
+    return client.v1.refunds.create(
+        {"charge": charge_id, "amount": amount}, {"idempotency_key": idempotency_key}
+    ).to_dict()
+```
+
+While recording, each call goes through a write-ahead protocol:
+
+1. A `PENDING` event is fsynced to the log before the call starts, with the call's args and its idempotency key.
+2. The function runs with `idempotency_key=` set to a key derived from the run id and the step (`ledger_` plus 40 hex digits of SHA-256). The same run reaching the same call always gets the same key.
+3. An error in `retry_on` means the outcome is unknown, so the call is retried with the same key (`attempts=3` by default, with backoff). Stripe answers a repeated key with the first response, so a refund whose answer was lost isn't made twice.
+4. The outcome is logged at the same step: `CONFIRMED` with the result, or `FAILED` when the API refused (any exception not in `retry_on`), which means the effect didn't happen.
+
+If every attempt fails in a way that leaves the outcome unknown, the step stays `PENDING` and the call raises `ledger.EffectInDoubt`. Ledger doesn't guess: the effect may or may not have happened. Resuming the run will settle it against the API (next on the M2 list).
+
+Replays answer effects from the log and never call the function. A replay or fork that would have to run an effect live, because it diverged upstream or a fork reruns the effect, raises `ledger.LiveEffectRefused` unless it was started with `live_effects=True`. A live effect there belongs to the new run and gets that run's keys. A fork can still edit an effect's outcome, which never calls it.
+
+This is effectively once, not exactly once: it relies on the API honouring idempotency keys, which Stripe does for 24 hours.
+
 ## Clock, ids and randomness
 
 `ledger.time()`, `ledger.now()`, `ledger.uuid4()` and `ledger.rng()` read live values while recording and logged values while replaying; outside a session they behave like the stdlib. `ledger.rng()` logs one seed per task and returns a `random.Random`, so any number of draws costs one event. They are explicit calls, not patches of `time`, `uuid` and `random`, because LangGraph, httpx and the OpenAI client read the clock too, a varying number of times per run.
@@ -160,6 +185,7 @@ docker compose -f deploy/docker-compose.yml run --rm replay
 | `ledger/core/` | Canonical payloads, SQLite WAL event store, blob store, request normalization, clock/uuid/rng shims, sessions and step keys |
 | `ledger/intercept/` | OpenAI client wrapper, `@tool`, LangGraph `instrument` |
 | `ledger/replay/` | Replay index, divergence detection, `replay`, and `fork` with `steps` |
+| `ledger/effects/` | `@ledger.effect`: idempotency keys, write-ahead pending/confirmed records, retries |
 | `ledger/cli.py` | The `ledger` command: `record`, `replay`, `fork`, `steps`, `runs` |
 | `ledger/testing/fake_llm.py` | Nondeterministic fake LLM and search server |
 | `examples/toy_pipeline.py` | 5-node pipeline with a 3-way parallel fan-out |
