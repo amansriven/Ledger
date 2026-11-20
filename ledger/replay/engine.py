@@ -188,6 +188,41 @@ def _loaded_class(qualified: str) -> type[BaseException] | None:
     return None
 
 
+def _text(exc: BaseException) -> str | None:
+    """``str(exc)``, or None if the class's ``__str__`` fails on it."""
+    try:
+        return str(exc)
+    except Exception:
+        return None
+
+
+_WITH_TEXT: dict[type[BaseException], type[BaseException]] = {}
+
+
+def _with_recorded_text(cls: type[BaseException], message: str) -> BaseException:
+    """An instance of a subclass of ``cls`` whose ``str()`` is ``message``.
+
+    For classes whose ``__str__`` reads attributes their ``__init__`` sets
+    (Stripe's errors do), when that ``__init__`` can't be run again.
+    """
+    sub = _WITH_TEXT.get(cls)
+    if sub is None:
+        sub = type(
+            cls.__name__,
+            (cls,),
+            {
+                "__module__": cls.__module__,
+                "__qualname__": cls.__qualname__,
+                "__str__": lambda self: getattr(self, "__ledger_text__", ""),
+            },
+        )
+        _WITH_TEXT[cls] = sub
+    exc = sub.__new__(sub, message)
+    BaseException.__init__(exc, message)
+    exc.__ledger_text__ = message  # type: ignore[attr-defined]
+    return exc
+
+
 def replayed_exception(error: pb.Error) -> BaseException:
     """The exception a recorded call raised, rebuilt for replay.
 
@@ -196,8 +231,10 @@ def replayed_exception(error: pb.Error) -> BaseException:
     did when recorded. A class whose constructor wants something else (say,
     a keyword-only ``request=``) is created without running its
     ``__init__``: ``isinstance`` and ``str`` hold, attributes set in
-    ``__init__`` are missing. Falls back to ReplayedError when the class
-    isn't loaded. The result carries ``__ledger_replayed__ = True``.
+    ``__init__`` are missing. If its ``__str__`` then fails or says
+    something else, the exception is an instance of a subclass that keeps
+    the recorded text. Falls back to ReplayedError when the class isn't
+    loaded. The result carries ``__ledger_replayed__ = True``.
     """
     cls = _loaded_class(error.type)
     exc: BaseException | None = None
@@ -213,13 +250,18 @@ def replayed_exception(error: pb.Error) -> BaseException:
                 BaseException.__init__(exc, *args)
             except Exception:
                 exc = None
-        if exc is not None and str(exc) != error.message:
+        if exc is not None and _text(exc) != error.message:
             # A constructor that reformats its args; keep the recorded text.
             try:
                 exc = cls.__new__(cls, error.message)
                 BaseException.__init__(exc, error.message)
             except Exception:
                 exc = None
+            if exc is None or _text(exc) != error.message:
+                try:
+                    exc = _with_recorded_text(cls, error.message)
+                except Exception:
+                    exc = None
     if exc is None:
         exc = ReplayedError(error)
     try:

@@ -76,7 +76,7 @@ One limitation, for replays and forks alike: step keys don't carry the parent gr
 
 ## Errors
 
-A call that raised while recording raises again on replay, as the same exception class with the same args, so `except ValueError:` in a node behaves the same both times. Replay only looks the class up among modules that are already imported; it never imports anything because the log names it. A class whose constructor needs something else (say, `openai.APIConnectionError`, which wants `request=`) is created without running its `__init__`: `isinstance` and `str()` hold, but attributes set in `__init__` are missing. If the class isn't loaded at all, replay raises `ledger.ReplayedError` instead. Every replayed exception has `__ledger_replayed__ = True`.
+A call that raised while recording raises again on replay, as the same exception class with the same args, so `except ValueError:` in a node behaves the same both times. Replay only looks the class up among modules that are already imported; it never imports anything because the log names it. A class whose constructor needs something else (say, `openai.APIConnectionError`, which wants `request=`) is created without running its `__init__`: `isinstance` and `str()` hold, but attributes set in `__init__` are missing. If its `__str__` then fails or says something else (Stripe's errors read attributes their `__init__` sets), the exception is an instance of a subclass that keeps the recorded text. If the class isn't loaded at all, replay raises `ledger.ReplayedError` instead. Every replayed exception has `__ledger_replayed__ = True`.
 
 ## Property tests
 
