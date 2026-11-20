@@ -33,18 +33,20 @@ only for graphs with subgraphs.
 
 from __future__ import annotations
 
+import copy
 import enum
 import threading
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
-from ledger.core.events import body_kind, pb
+from ledger.core.events import body_kind, load_payload, pb
 from ledger.core.session import Mode, Session, activate
 from ledger.core.store import EventStore, step_key
 
 __all__ = [
+    "RERUN",
     "DivergencePoint",
     "DivergenceReason",
     "ReplayIndex",
@@ -60,10 +62,23 @@ CALL_KINDS = ("llm_call", "tool_call", "nondet")
 OnDivergence = Literal["raise", "live"]
 
 
+class _Rerun:
+    def __repr__(self) -> str:
+        return "RERUN"
+
+
+# Fork edit meaning "run this call live again instead of editing it".
+RERUN: Any = _Rerun()
+
+
 class DivergenceReason(enum.Enum):
     CHANGED_REQUEST = "changed_request"
     UNRECORDED_CALL = "unrecorded_call"
     CHANGED_KIND = "changed_kind"
+    # A fork replaced this call's recorded outcome.
+    EDITED = "edited"
+    # A fork ran this call live again.
+    RERUN = "rerun"
     # A recorded call the replay never made, and nothing downstream of a
     # divergence explains it. Found when the block exits; nothing goes live.
     SKIPPED_CALL = "skipped_call"
@@ -77,6 +92,8 @@ _REASON_PROTO = {
     DivergenceReason.CHANGED_REQUEST: pb.DIVERGENCE_REASON_CHANGED_REQUEST,
     DivergenceReason.UNRECORDED_CALL: pb.DIVERGENCE_REASON_UNRECORDED_CALL,
     DivergenceReason.CHANGED_KIND: pb.DIVERGENCE_REASON_CHANGED_KIND,
+    DivergenceReason.EDITED: pb.DIVERGENCE_REASON_EDITED,
+    DivergenceReason.RERUN: pb.DIVERGENCE_REASON_RERUN,
 }
 
 
@@ -165,7 +182,11 @@ class ReplayIndex:
     """Recorded calls of one run, keyed by step, and where a replay left them."""
 
     def __init__(
-        self, events: Iterable[pb.Event], *, on_divergence: OnDivergence = "raise"
+        self,
+        events: Iterable[pb.Event],
+        *,
+        on_divergence: OnDivergence = "raise",
+        forks: Mapping[str, Any] | None = None,
     ) -> None:
         if on_divergence not in ("raise", "live"):
             raise ValueError(f"on_divergence must be 'raise' or 'live', not {on_divergence!r}")
@@ -182,6 +203,12 @@ class ReplayIndex:
             elif kind == "run_finished" and ev.run_finished.HasField("output"):
                 self.output_sha256 = ev.run_finished.output.sha256
         self.divergences: list[DivergencePoint] = []
+        # Fork edits by step key: a JSON value, a callable, or RERUN.
+        self.forks: dict[str, Any] = dict(forks or {})
+        for key in self.forks:
+            if key not in self.calls:
+                raise KeyError(f"the recording has no call at step {key}")
+        self._applied: set[str] = set()
         self._consumed: set[str] = set()
         self._lock = threading.Lock()
 
@@ -234,7 +261,14 @@ class ReplayIndex:
         call is where the replay diverges (it goes live), or None when the
         call is downstream of an earlier divergence (it goes live too). With
         ``on_divergence="raise"`` a mismatch raises instead.
+
+        A fork step always returns a DivergencePoint (EDITED or RERUN), even
+        downstream of another divergence and whatever its request: the edit
+        replaces the call's outcome, so the request does not need to match.
         """
+        key = step_key(step)
+        if key in self.forks:
+            return self._fork_point(step, key, kind, match_key)
         with self._lock:
             if any(is_downstream(step, p.ref) for p in self.divergences if p.ref is not None):
                 return None
@@ -250,6 +284,41 @@ class ReplayIndex:
             with self._lock:
                 self.divergences.append(point)
             return point
+
+    def _fork_point(
+        self, step: pb.StepRef, key: str, kind: str, match_key: str
+    ) -> DivergencePoint:
+        recorded = self.calls[key]
+        recorded_kind = body_kind(recorded)
+        if recorded_kind != kind:
+            raise ReplayMismatch(
+                f"fork step {key} recorded a {recorded_kind}, replay made a {kind}",
+                step=key, reason=DivergenceReason.CHANGED_KIND, kind=kind,
+                recorded=recorded_kind, actual=kind,
+            )
+        rerun = self.forks[key] is RERUN
+        point = DivergencePoint(
+            step=key,
+            reason=DivergenceReason.RERUN if rerun else DivergenceReason.EDITED,
+            kind=kind, recorded=_recorded_match(recorded)[0], actual=match_key,
+            ref=_copy(step),
+        )
+        with self._lock:
+            if key in self._applied:
+                raise ReplayMismatch(f"step {key} was replayed twice", step=key, kind=kind)
+            self._applied.add(key)
+            self._consumed.add(key)
+            self.divergences.append(point)
+        return point
+
+    def edited_outcome(self, key: str) -> Any:
+        """The JSON outcome a fork edit gives the call at ``key``."""
+        return apply_edit(self.calls[key], self.forks[key])
+
+    def unapplied_forks(self) -> list[str]:
+        """Fork steps the run never reached."""
+        with self._lock:
+            return sorted(set(self.forks) - self._applied)
 
     def unconsumed(self) -> list[str]:
         with self._lock:
@@ -274,6 +343,31 @@ def _copy(step: pb.StepRef) -> pb.StepRef:
     ref = pb.StepRef()
     ref.CopyFrom(step)
     return ref
+
+
+def apply_edit(recorded: pb.Event, edit: Any) -> Any:
+    """The JSON outcome ``edit`` gives a recorded call.
+
+    ``edit`` is the new outcome, or a callable that takes the recorded one
+    (None if the call raised) and returns it. For an LLM call, a string
+    replaces the text of the first choice and keeps the rest of the recorded
+    completion; anything else is the whole completion.
+    """
+    kind = body_kind(recorded)
+    body = getattr(recorded, kind)
+    field = {"llm_call": "response", "tool_call": "result", "nondet": "value"}[kind]
+    failed = kind != "nondet" and body.HasField("error")
+    old = None if failed else load_payload(getattr(body, field))
+    value = edit(copy.deepcopy(old)) if callable(edit) else edit
+    if kind == "llm_call" and isinstance(value, str):
+        if not old or not old.get("choices"):
+            raise ValueError(
+                f"step {step_key(recorded.step)}: the recorded LLM call has no "
+                "completion to put text into; pass a whole completion instead"
+            )
+        text, value = value, copy.deepcopy(old)
+        value["choices"][0]["message"]["content"] = text
+    return value
 
 
 def diverged_event_body(point: DivergencePoint) -> pb.Diverged:
@@ -306,40 +400,71 @@ def replay(
     nothing raises. ``session.divergences`` lists where the replay diverged,
     including recorded calls it skipped.
     """
+    with replay_session(
+        source_run_id, store, run_id,
+        mode=Mode.REPLAY, strict=strict, on_divergence=on_divergence,
+    ) as session:
+        yield session
+
+
+@contextmanager
+def replay_session(
+    source_run_id: str,
+    store: EventStore | None,
+    run_id: str | None,
+    *,
+    mode: Mode,
+    strict: bool = True,
+    on_divergence: OnDivergence = "raise",
+    forks: Mapping[str, Any] | None = None,
+) -> Iterator[Session]:
+    """A replay or fork session; ``replay`` and ``fork`` are the public forms."""
     owns_store = store is None
     store = store or EventStore()
     try:
-        index = ReplayIndex(store.events(source_run_id), on_divergence=on_divergence)
+        index = ReplayIndex(
+            store.events(source_run_id), on_divergence=on_divergence, forks=forks
+        )
         if not index.calls and index.input is None:
             raise KeyError(f"no recorded run {source_run_id!r} in {store.path}")
         if run_id is None:
-            n = sum(1 for r in store.run_ids() if r.startswith(f"{source_run_id}.replay-"))
-            run_id = f"{source_run_id}.replay-{n + 1}"
+            prefix = f"{source_run_id}.{mode.value}-"
+            n = sum(1 for r in store.run_ids() if r.startswith(prefix))
+            run_id = f"{prefix}{n + 1}"
         session = Session(
-            store,
-            run_id,
-            Mode.REPLAY,
-            source_run_id=source_run_id,
-            replay_index=index,
+            store, run_id, mode, source_run_id=source_run_id, replay_index=index
         )
         with activate(session):
             yield session
-        if on_divergence == "live":
-            for key in index.skipped():
-                rec = index.calls[key]
-                index.divergences.append(
-                    DivergencePoint(
-                        step=key, reason=DivergenceReason.SKIPPED_CALL,
-                        kind=body_kind(rec), recorded=_recorded_match(rec)[0], actual="",
-                    )
-                )
-            return
-        missing = index.unconsumed()
-        if strict and missing:
-            raise ReplayDivergence(
-                f"replay of {source_run_id} skipped {len(missing)} recorded call(s), "
-                f"first at {missing[0]}"
-            )
+        _check_exit(index, source_run_id, strict=strict)
     finally:
         if owns_store:
             store.close()
+
+
+def _check_exit(index: ReplayIndex, source_run_id: str, *, strict: bool) -> None:
+    """Report (live) or raise (strict) on recorded calls the run never made."""
+    unreached = index.unapplied_forks()
+    skipped = index.skipped()
+    if index.on_divergence == "live":
+        for key in sorted(set(skipped) | set(unreached)):
+            rec = index.calls[key]
+            index.divergences.append(
+                DivergencePoint(
+                    step=key, reason=DivergenceReason.SKIPPED_CALL,
+                    kind=body_kind(rec), recorded=_recorded_match(rec)[0], actual="",
+                )
+            )
+        return
+    if unreached:
+        raise ReplayDivergence(
+            f"fork of {source_run_id} never reached step {unreached[0]}"
+            + (f" (and {len(unreached) - 1} more)" if len(unreached) > 1 else "")
+        )
+    # Without divergence points (a plain strict replay) skipped() is every
+    # unconsumed call; a fork leaves out what runs live downstream of it.
+    if strict and skipped:
+        raise ReplayDivergence(
+            f"replay of {source_run_id} skipped {len(skipped)} recorded call(s), "
+            f"first at {skipped[0]}"
+        )

@@ -14,6 +14,7 @@ class Mode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     MODE_UNSPECIFIED: _ClassVar[Mode]
     MODE_RECORD: _ClassVar[Mode]
     MODE_REPLAY: _ClassVar[Mode]
+    MODE_FORK: _ClassVar[Mode]
 
 class DivergenceReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -21,13 +22,18 @@ class DivergenceReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     DIVERGENCE_REASON_CHANGED_REQUEST: _ClassVar[DivergenceReason]
     DIVERGENCE_REASON_UNRECORDED_CALL: _ClassVar[DivergenceReason]
     DIVERGENCE_REASON_CHANGED_KIND: _ClassVar[DivergenceReason]
+    DIVERGENCE_REASON_EDITED: _ClassVar[DivergenceReason]
+    DIVERGENCE_REASON_RERUN: _ClassVar[DivergenceReason]
 MODE_UNSPECIFIED: Mode
 MODE_RECORD: Mode
 MODE_REPLAY: Mode
+MODE_FORK: Mode
 DIVERGENCE_REASON_UNSPECIFIED: DivergenceReason
 DIVERGENCE_REASON_CHANGED_REQUEST: DivergenceReason
 DIVERGENCE_REASON_UNRECORDED_CALL: DivergenceReason
 DIVERGENCE_REASON_CHANGED_KIND: DivergenceReason
+DIVERGENCE_REASON_EDITED: DivergenceReason
+DIVERGENCE_REASON_RERUN: DivergenceReason
 
 class StepRef(_message.Message):
     __slots__ = ("namespace", "superstep", "node", "path", "seq")

@@ -2,7 +2,7 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay), week 3.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger fork`, the CLI and the 200-run replay benchmark come next. Exactly-once effects, blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay), week 3.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live. The CLI, a property test and the 200-run replay benchmark come next. Exactly-once effects, blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
 
 ## Integration
 
@@ -52,7 +52,27 @@ session.divergences   # [DivergencePoint(step=".../2/research_web/...#1", reason
 
 The replay's log shows what happened. Each divergence point gets a `Diverged` event at its step, just before the live call, and every call event carries `from_log`. The log is a complete recording of the edited run, so it can be replayed strictly in turn.
 
-One limitation: step keys don't carry the parent graph's superstep, so calls in a different namespace from the divergence (inside or around a subgraph) can't be placed relative to it. Every such call made after the divergence goes live, which is safe but can run more live calls than needed in graphs with subgraphs.
+## Fork
+
+A fork replays a run with chosen calls changed: each one gets an edited outcome, or runs live again. Everything downstream of them runs live, and the rest replays from the log, so a counterfactual pays only for what it changes.
+
+```python
+for s in ledger.steps(run_id):                # every call, in log order
+    print(s)  # #12  llm_call  fake-model  /2/research_web/(__pregel_pull,research_web)#1  Summary of ...
+
+with ledger.fork(run_id, at=12, edit="a different summary") as session:
+    graph.invoke(inputs)
+
+ledger.fork(run_id, at=step)                                  # rerun live (edit=ledger.RERUN)
+ledger.fork(run_id, at=step, edit=lambda old: old.upper())    # derive from the recorded outcome
+ledger.fork(run_id, edits={step_a: "x", step_b: ledger.RERUN})
+```
+
+`at` takes a step key, the call's index in the run's log, a `StepRef` or a `StepInfo`. An edit is the call's new outcome. For an LLM call, a string replaces the first choice's text and keeps the rest of the recorded completion. Upstream of the fork steps the run must still match its recording: a mismatch raises, and so does a fork step the run never reaches. Pass `on_divergence="live"` to allow code changes as well.
+
+The fork is logged as its own run (`<source>.fork-<n>`, mode `MODE_FORK`), with a `Diverged` event of reason `EDITED` or `RERUN` at each fork step. Its log holds the edited outcomes, so it replays strictly like any recording.
+
+One limitation, for replays and forks alike: step keys don't carry the parent graph's superstep, so calls in a different namespace from a divergence or fork step (inside or around a subgraph) can't be placed relative to it. Every such call made after the divergence goes live, which is safe but can run more live calls than needed in graphs with subgraphs.
 
 ## Clock, ids and randomness
 
@@ -88,7 +108,7 @@ docker compose -f deploy/docker-compose.yml run --rm replay
 | `proto/events.proto` | Event schema (`ledger.v1`). Regenerate with `scripts/gen_proto.sh` |
 | `ledger/core/` | Canonical payloads, SQLite WAL event store, blob store, request normalization, clock/uuid/rng shims, sessions and step keys |
 | `ledger/intercept/` | OpenAI client wrapper, `@tool`, LangGraph `instrument` |
-| `ledger/replay/` | Replay index, divergence detection and the `replay` context manager |
+| `ledger/replay/` | Replay index, divergence detection, `replay`, and `fork` with `steps` |
 | `ledger/testing/fake_llm.py` | Nondeterministic fake LLM and search server |
 | `examples/toy_pipeline.py` | 5-node pipeline with a 3-way parallel fan-out |
 | `deploy/` | Dockerfile and Compose file |

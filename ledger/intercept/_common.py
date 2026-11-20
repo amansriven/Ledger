@@ -43,7 +43,12 @@ def answer_from_log(
     The replay's log entry carries the request as it was made this time (it
     may differ from the recording in masked parts) with the recorded outcome.
     """
-    from ledger.replay.engine import DivergencePoint, ReplayedError, diverged_event_body
+    from ledger.replay.engine import (
+        DivergencePoint,
+        DivergenceReason,
+        ReplayedError,
+        diverged_event_body,
+    )
 
     assert session.replay_index is not None
     recorded = session.replay_index.resolve(
@@ -55,7 +60,9 @@ def answer_from_log(
         ev = new_event(step)
         ev.diverged.CopyFrom(diverged_event_body(recorded))
         session.append(ev)
-        return GO_LIVE
+        if recorded.reason is not DivergenceReason.EDITED:
+            return GO_LIVE
+        return _serve_edit(session, step, kind, request, decode, match_key, recorded.step)
     body = getattr(recorded, kind)
     ev = new_event(step)
     ev.from_log = True
@@ -69,6 +76,37 @@ def answer_from_log(
     if kind != "nondet" and body.HasField("error"):
         raise ReplayedError(body.error)
     return decode(load_payload(getattr(body, RESPONSE_FIELD[kind])))
+
+
+def _serve_edit(
+    session: Session,
+    step: pb.StepRef,
+    kind: str,
+    request: pb.Payload | None,
+    decode: Callable[[Any], Any],
+    match_key: str,
+    key: str,
+) -> Any:
+    """Log and return a fork's edited outcome for this call.
+
+    The event keeps the recorded call's metadata, carries the request as
+    made this time and the edited outcome, with any recorded error cleared.
+    """
+    assert session.replay_index is not None
+    value = session.replay_index.edited_outcome(key)
+    payload = make_payload(value)
+    ev = new_event(step)
+    body = getattr(ev, kind)
+    body.CopyFrom(getattr(session.replay_index.calls[key], kind))
+    if kind in REQUEST_FIELD:
+        body.ClearField("error")
+        if request is not None:
+            getattr(body, REQUEST_FIELD[kind]).CopyFrom(request)
+            setattr(body, KEY_FIELD[kind], match_key)
+    getattr(body, RESPONSE_FIELD[kind]).CopyFrom(payload)
+    session.append(ev)
+    session.count_call(live=False, kind=kind, edited=True)
+    return decode(load_payload(payload))
 
 
 def log_live(

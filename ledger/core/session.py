@@ -44,21 +44,28 @@ __all__ = [
 class Mode(enum.Enum):
     RECORD = "record"
     REPLAY = "replay"
+    FORK = "fork"
 
     @property
     def proto(self) -> int:
-        return pb.MODE_RECORD if self is Mode.RECORD else pb.MODE_REPLAY
+        return {
+            Mode.RECORD: pb.MODE_RECORD,
+            Mode.REPLAY: pb.MODE_REPLAY,
+            Mode.FORK: pb.MODE_FORK,
+        }[self]
 
 
 @dataclass
 class SessionStats:
     """Counts of intercepted calls. ``*_calls`` are LLM and tool calls only;
-    reads of time, uuids and random seeds are counted as ``*_nondet``."""
+    reads of time, uuids and random seeds are counted as ``*_nondet``.
+    ``edited`` counts calls of any kind whose outcome a fork replaced."""
 
     live_calls: int = 0
     replayed_calls: int = 0
     live_nondet: int = 0
     replayed_nondet: int = 0
+    edited: int = 0
 
 
 _current: ContextVar[Session | None] = ContextVar("ledger_session", default=None)
@@ -119,8 +126,8 @@ class Session:
         source_run_id: str = "",
         replay_index: ReplayIndex | None = None,
     ) -> None:
-        if mode is Mode.REPLAY and replay_index is None:
-            raise ValueError("a replay session needs a replay index")
+        if mode is not Mode.RECORD and replay_index is None:
+            raise ValueError(f"a {mode.value} session needs a replay index")
         self.store = store
         self.run_id = run_id
         self.mode = mode
@@ -146,9 +153,11 @@ class Session:
             namespace=namespace, superstep=superstep, node=node, path=path, seq=seq
         )
 
-    def count_call(self, *, live: bool, kind: str = "llm_call") -> None:
+    def count_call(self, *, live: bool, kind: str = "llm_call", edited: bool = False) -> None:
         with self._lock:
-            if kind == "nondet":
+            if edited:
+                self.stats.edited += 1
+            elif kind == "nondet":
                 if live:
                     self.stats.live_nondet += 1
                 else:
@@ -187,7 +196,8 @@ class Session:
 
     @property
     def is_replay(self) -> bool:
-        return self.mode is Mode.REPLAY
+        """Whether calls are looked up in a recording (replays and forks)."""
+        return self.mode is not Mode.RECORD
 
     @property
     def divergences(self) -> list[Any]:
