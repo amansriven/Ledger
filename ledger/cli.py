@@ -89,6 +89,14 @@ def _env_graph() -> str:
 # Runs
 
 
+def _is_call(event: pb.Event) -> bool:
+    """An LLM call, tool call or effect outcome (not an effect's PENDING record)."""
+    kind = body_kind(event)
+    if kind == "effect":
+        return event.effect.phase != pb.EffectCall.PHASE_PENDING
+    return kind in ("llm_call", "tool_call")
+
+
 class RunInfo:
     """One run in the store, as ``ledger runs`` shows it."""
 
@@ -101,10 +109,8 @@ class RunInfo:
         self.mode = MODES.get(started.mode, "?")
         self.source = started.source_run_id
         self.graph = started.graph
-        self.calls = sum(body_kind(e) in ("llm_call", "tool_call") for e in events)
-        self.live = sum(
-            body_kind(e) in ("llm_call", "tool_call") and not e.from_log for e in events
-        )
+        self.calls = sum(_is_call(e) for e in events)
+        self.live = sum(_is_call(e) and not e.from_log for e in events)
         self.diverged = sum(body_kind(e) == "diverged" for e in events)
         if body_kind(last) != "run_finished":
             self.status = "unfinished"

@@ -131,6 +131,38 @@ class Nondet(_message.Message):
     value: Payload
     def __init__(self, source: _Optional[str] = ..., value: _Optional[_Union[Payload, _Mapping]] = ...) -> None: ...
 
+class EffectCall(_message.Message):
+    __slots__ = ("phase", "name", "args", "args_key", "idempotency_key", "result", "error", "latency_us", "attempts")
+    class Phase(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+        __slots__ = ()
+        PHASE_UNSPECIFIED: _ClassVar[EffectCall.Phase]
+        PHASE_PENDING: _ClassVar[EffectCall.Phase]
+        PHASE_CONFIRMED: _ClassVar[EffectCall.Phase]
+        PHASE_FAILED: _ClassVar[EffectCall.Phase]
+    PHASE_UNSPECIFIED: EffectCall.Phase
+    PHASE_PENDING: EffectCall.Phase
+    PHASE_CONFIRMED: EffectCall.Phase
+    PHASE_FAILED: EffectCall.Phase
+    PHASE_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    ARGS_FIELD_NUMBER: _ClassVar[int]
+    ARGS_KEY_FIELD_NUMBER: _ClassVar[int]
+    IDEMPOTENCY_KEY_FIELD_NUMBER: _ClassVar[int]
+    RESULT_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    LATENCY_US_FIELD_NUMBER: _ClassVar[int]
+    ATTEMPTS_FIELD_NUMBER: _ClassVar[int]
+    phase: EffectCall.Phase
+    name: str
+    args: Payload
+    args_key: str
+    idempotency_key: str
+    result: Payload
+    error: Error
+    latency_us: int
+    attempts: int
+    def __init__(self, phase: _Optional[_Union[EffectCall.Phase, str]] = ..., name: _Optional[str] = ..., args: _Optional[_Union[Payload, _Mapping]] = ..., args_key: _Optional[str] = ..., idempotency_key: _Optional[str] = ..., result: _Optional[_Union[Payload, _Mapping]] = ..., error: _Optional[_Union[Error, _Mapping]] = ..., latency_us: _Optional[int] = ..., attempts: _Optional[int] = ...) -> None: ...
+
 class Diverged(_message.Message):
     __slots__ = ("reason", "kind", "recorded", "actual")
     REASON_FIELD_NUMBER: _ClassVar[int]
@@ -144,7 +176,7 @@ class Diverged(_message.Message):
     def __init__(self, reason: _Optional[_Union[DivergenceReason, str]] = ..., kind: _Optional[str] = ..., recorded: _Optional[str] = ..., actual: _Optional[str] = ...) -> None: ...
 
 class Event(_message.Message):
-    __slots__ = ("run_id", "index", "recorded_at", "step", "from_log", "run_started", "run_finished", "llm_call", "tool_call", "nondet", "diverged")
+    __slots__ = ("run_id", "index", "recorded_at", "step", "from_log", "run_started", "run_finished", "llm_call", "tool_call", "nondet", "diverged", "effect")
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     INDEX_FIELD_NUMBER: _ClassVar[int]
     RECORDED_AT_FIELD_NUMBER: _ClassVar[int]
@@ -156,6 +188,7 @@ class Event(_message.Message):
     TOOL_CALL_FIELD_NUMBER: _ClassVar[int]
     NONDET_FIELD_NUMBER: _ClassVar[int]
     DIVERGED_FIELD_NUMBER: _ClassVar[int]
+    EFFECT_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     index: int
     recorded_at: _timestamp_pb2.Timestamp
@@ -167,4 +200,5 @@ class Event(_message.Message):
     tool_call: ToolCall
     nondet: Nondet
     diverged: Diverged
-    def __init__(self, run_id: _Optional[str] = ..., index: _Optional[int] = ..., recorded_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., step: _Optional[_Union[StepRef, _Mapping]] = ..., from_log: _Optional[bool] = ..., run_started: _Optional[_Union[RunStarted, _Mapping]] = ..., run_finished: _Optional[_Union[RunFinished, _Mapping]] = ..., llm_call: _Optional[_Union[LLMCall, _Mapping]] = ..., tool_call: _Optional[_Union[ToolCall, _Mapping]] = ..., nondet: _Optional[_Union[Nondet, _Mapping]] = ..., diverged: _Optional[_Union[Diverged, _Mapping]] = ...) -> None: ...
+    effect: EffectCall
+    def __init__(self, run_id: _Optional[str] = ..., index: _Optional[int] = ..., recorded_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., step: _Optional[_Union[StepRef, _Mapping]] = ..., from_log: _Optional[bool] = ..., run_started: _Optional[_Union[RunStarted, _Mapping]] = ..., run_finished: _Optional[_Union[RunFinished, _Mapping]] = ..., llm_call: _Optional[_Union[LLMCall, _Mapping]] = ..., tool_call: _Optional[_Union[ToolCall, _Mapping]] = ..., nondet: _Optional[_Union[Nondet, _Mapping]] = ..., diverged: _Optional[_Union[Diverged, _Mapping]] = ..., effect: _Optional[_Union[EffectCall, _Mapping]] = ...) -> None: ...

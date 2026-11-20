@@ -12,8 +12,9 @@ Replay matches a call on its normalized args (``ledger.core.normalize``), so
 a timestamp or id inside an argument does not count as a change. Pass
 ``normalizer=`` to change that.
 
-Tools with side effects that must happen once (payments, refunds) get
-``@ledger.effect`` in M2. ``@ledger.tool`` only records and replays.
+Tools with side effects that must happen once (payments, refunds) belong in
+``@ledger.effect`` instead, which adds idempotency keys and a write-ahead
+record. ``@ledger.tool`` only records and replays.
 """
 
 from __future__ import annotations

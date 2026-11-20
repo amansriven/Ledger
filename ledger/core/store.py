@@ -35,6 +35,7 @@ _PAYLOAD_FIELDS = {
     "llm_call": ("request", "response"),
     "tool_call": ("args", "result"),
     "nondet": ("value",),
+    "effect": ("args", "result"),
 }
 
 _SCHEMA = """

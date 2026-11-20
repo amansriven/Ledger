@@ -8,11 +8,14 @@ from typing import Any
 
 from ledger.core.events import load_payload, make_error, make_payload, new_event, pb
 from ledger.core.session import Session
+from ledger.core.store import step_key
 
 # Name of the field that holds the call's output, per event body kind.
-RESPONSE_FIELD = {"llm_call": "response", "tool_call": "result", "nondet": "value"}
-REQUEST_FIELD = {"llm_call": "request", "tool_call": "args"}
-KEY_FIELD = {"llm_call": "request_key", "tool_call": "args_key"}
+RESPONSE_FIELD = {
+    "llm_call": "response", "tool_call": "result", "nondet": "value", "effect": "result"
+}
+REQUEST_FIELD = {"llm_call": "request", "tool_call": "args", "effect": "args"}
+KEY_FIELD = {"llm_call": "request_key", "tool_call": "args_key", "effect": "args_key"}
 
 
 class _GoLive:
@@ -64,6 +67,13 @@ def answer_from_log(
             return GO_LIVE
         return _serve_edit(session, step, kind, request, decode, match_key, recorded.step)
     body = getattr(recorded, kind)
+    if kind == "effect" and body.phase == pb.EffectCall.PHASE_PENDING:
+        from ledger.effects.manager import EffectInDoubt
+
+        # The recording crashed or gave up with this effect in doubt.
+        raise EffectInDoubt(
+            body.name, step_key(recorded.step), body.idempotency_key, body.attempts
+        )
     ev = new_event(step)
     ev.from_log = True
     logged = getattr(ev, kind)
@@ -104,6 +114,8 @@ def _serve_edit(
             getattr(body, REQUEST_FIELD[kind]).CopyFrom(request)
             setattr(body, KEY_FIELD[kind], match_key)
     getattr(body, RESPONSE_FIELD[kind]).CopyFrom(payload)
+    if kind == "effect":
+        body.phase = pb.EffectCall.PHASE_CONFIRMED
     session.append(ev)
     session.count_call(live=False, kind=kind, edited=True)
     return decode(load_payload(payload))

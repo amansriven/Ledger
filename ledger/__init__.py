@@ -21,6 +21,7 @@ from ledger.core.clock import now, rng, time, uuid4
 from ledger.core.normalize import EXACT, Normalizer
 from ledger.core.session import Mode, Session, current_session, record
 from ledger.core.store import EventStore
+from ledger.effects import EffectInDoubt, LiveEffectRefused, effect
 from ledger.intercept.langgraph import instrument
 from ledger.intercept.llm import wrap
 from ledger.intercept.tools import tool
@@ -39,8 +40,10 @@ __all__ = [
     "DivergencePoint",
     "DivergenceReason",
     "EXACT",
+    "EffectInDoubt",
     "RERUN",
     "EventStore",
+    "LiveEffectRefused",
     "Mode",
     "Normalizer",
     "ReplayDivergence",
@@ -49,6 +52,7 @@ __all__ = [
     "Session",
     "StepInfo",
     "current_session",
+    "effect",
     "fork",
     "instrument",
     "now",

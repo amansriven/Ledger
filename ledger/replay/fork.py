@@ -37,7 +37,7 @@ from typing import Any
 from ledger.core.events import body_kind, load_payload, pb
 from ledger.core.session import Mode, Session
 from ledger.core.store import EventStore, step_key
-from ledger.replay.engine import CALL_KINDS, RERUN, OnDivergence, replay_session
+from ledger.replay.engine import CALL_KINDS, OUTCOME_FIELD, RERUN, OnDivergence, replay_session
 
 __all__ = ["RERUN", "Step", "StepInfo", "fork", "steps"]
 
@@ -48,11 +48,11 @@ class StepInfo:
 
     index: int  # position of the call's event in the run's log
     key: str  # step key, what ``fork(at=...)`` matches on
-    kind: str  # "llm_call", "tool_call" or "nondet"
+    kind: str  # "llm_call", "tool_call", "nondet" or "effect"
     node: str
     superstep: int
     seq: int
-    label: str  # model, tool name, or nondet source
+    label: str  # model, tool or effect name, or nondet source
     summary: str  # the outcome, shortened
     from_log: bool
 
@@ -68,10 +68,12 @@ Step = str | int | pb.StepRef | StepInfo
 def _summary(event: pb.Event, width: int = 60) -> str:
     kind = body_kind(event)
     body = getattr(event, kind)
-    if kind != "nondet" and body.HasField("error"):
+    if kind == "effect" and body.phase == pb.EffectCall.PHASE_PENDING:
+        text = "in doubt" + (f" after {body.error.type}" if body.HasField("error") else "")
+    elif kind != "nondet" and body.HasField("error"):
         text = f"!{body.error.type}: {body.error.message}"
     else:
-        field = {"llm_call": "response", "tool_call": "result", "nondet": "value"}[kind]
+        field = OUTCOME_FIELD[kind]
         value = load_payload(getattr(body, field))
         if kind == "llm_call" and isinstance(value, dict) and value.get("choices"):
             value = value["choices"][0].get("message", {}).get("content") or ""
@@ -86,25 +88,32 @@ def _label(event: pb.Event) -> str:
         return event.llm_call.model
     if kind == "tool_call":
         return event.tool_call.name
+    if kind == "effect":
+        return event.effect.name
     return event.nondet.source
 
 
 def steps(run_id: str, store: EventStore | None = None) -> list[StepInfo]:
-    """Every intercepted call of a run, in log order."""
+    """Every intercepted call of a run, in log order.
+
+    An effect is listed once, at its outcome; one left in doubt is listed at
+    its last PENDING record.
+    """
     owns_store = store is None
     store = store or EventStore()
     try:
-        out = []
+        found: dict[str, StepInfo] = {}
         for ev in store.events(run_id):
             if body_kind(ev) not in CALL_KINDS:
                 continue
-            out.append(
+            found[step_key(ev.step)] = (
                 StepInfo(
                     index=ev.index, key=step_key(ev.step), kind=body_kind(ev),
                     node=ev.step.node, superstep=ev.step.superstep, seq=ev.step.seq,
                     label=_label(ev), summary=_summary(ev), from_log=ev.from_log,
                 )
             )
+        out = sorted(found.values(), key=lambda s: s.index)
         if not out and not any(True for _ in store.events(run_id)):
             raise KeyError(f"no recorded run {run_id!r} in {store.path}")
         return out
@@ -139,11 +148,16 @@ def fork(
     store: EventStore | None = None,
     run_id: str | None = None,
     on_divergence: OnDivergence = "raise",
+    live_effects: bool = False,
 ) -> Iterator[Session]:
     """Replay ``source_run_id`` with the call at ``at`` edited or rerun live.
 
     Give one step with ``at`` and ``edit``, or several with ``edits``
     (``{step: edit}``). See the module docstring for what an edit can be.
+
+    An effect downstream of the fork steps, or rerun by one, would run live
+    and raises ``LiveEffectRefused`` unless ``live_effects`` is true. Editing
+    an effect's outcome never calls it.
     """
     if (at is None) == (edits is None):
         raise TypeError("give either at= (with edit=) or edits=")
@@ -163,6 +177,7 @@ def fork(
         with replay_session(
             source_run_id, store, run_id,
             mode=Mode.FORK, on_divergence=on_divergence, forks=forks,
+            live_effects=live_effects,
         ) as session:
             yield session
     finally:
