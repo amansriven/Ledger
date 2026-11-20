@@ -42,11 +42,13 @@ __all__ = ["time", "now", "uuid4", "rng"]
 
 def _read(session: Session, source: str, live: Callable[[], Any]) -> Any:
     """Read one JSON value from ``live`` (record) or from the log (replay)."""
-    from ledger.intercept._common import answer_from_log
+    from ledger.intercept._common import GO_LIVE, answer_from_log
 
     step = session.next_step()
     if session.is_replay:
-        return answer_from_log(session, step, "nondet", None, lambda v: v, match_key=source)
+        out = answer_from_log(session, step, "nondet", None, lambda v: v, match_key=source)
+        if out is not GO_LIVE:
+            return out
     value = live()
     ev = new_event(step)
     ev.nondet.CopyFrom(pb.Nondet(source=source, value=make_payload(value)))

@@ -100,6 +100,33 @@ message Nondet {
   Payload value = 2;
 }
 
+enum DivergenceReason {
+  DIVERGENCE_REASON_UNSPECIFIED = 0;
+  // The recording has a call of the same kind at this step, with a
+  // different request.
+  DIVERGENCE_REASON_CHANGED_REQUEST = 1;
+  // The recording has no call at this step.
+  DIVERGENCE_REASON_UNRECORDED_CALL = 2;
+  // The recording has a different kind of call at this step (say, a tool
+  // call where the replay made an LLM call).
+  DIVERGENCE_REASON_CHANGED_KIND = 3;
+}
+
+// A replay running with on_divergence="live" made a call that does not match
+// the recording at its step. That call, and every call downstream of it, ran
+// live. Logged in the replay's run at the divergent step, just before the
+// live call's own event.
+message Diverged {
+  DivergenceReason reason = 1;
+  // Body kind of the call the replay made: "llm_call", "tool_call", "nondet".
+  string kind = 2;
+  // Match key (or kind, for CHANGED_KIND) the recording has at this step.
+  // Empty for UNRECORDED_CALL.
+  string recorded = 3;
+  // Match key (or kind) of the call the replay made.
+  string actual = 4;
+}
+
 message Event {
   string run_id = 1;
   // Position in the run's log, starting at 0, with no gaps.
@@ -107,6 +134,10 @@ message Event {
   google.protobuf.Timestamp recorded_at = 3;
   // Unset for run-level events.
   StepRef step = 4;
+  // True for a call a replay answered from the recording; false for a call
+  // that went live. (Replay logs written before this field existed have it
+  // false on every call.)
+  bool from_log = 5;
 
   oneof body {
     RunStarted run_started = 10;
@@ -114,5 +145,6 @@ message Event {
     LLMCall llm_call = 12;
     ToolCall tool_call = 13;
     Nondet nondet = 14;
+    Diverged diverged = 15;
   }
 }

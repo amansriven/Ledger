@@ -22,9 +22,18 @@ from ledger.core.store import EventStore
 from ledger.intercept.langgraph import instrument
 from ledger.intercept.llm import wrap
 from ledger.intercept.tools import tool
-from ledger.replay.engine import ReplayDivergence, ReplayedError, ReplayMismatch, replay
+from ledger.replay.engine import (
+    DivergencePoint,
+    DivergenceReason,
+    ReplayDivergence,
+    ReplayedError,
+    ReplayMismatch,
+    replay,
+)
 
 __all__ = [
+    "DivergencePoint",
+    "DivergenceReason",
     "EXACT",
     "EventStore",
     "Mode",

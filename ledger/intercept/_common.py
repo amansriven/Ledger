@@ -15,6 +15,16 @@ REQUEST_FIELD = {"llm_call": "request", "tool_call": "args"}
 KEY_FIELD = {"llm_call": "request_key", "tool_call": "args_key"}
 
 
+class _GoLive:
+    """Returned by answer_from_log when the call has to run live."""
+
+    def __repr__(self) -> str:
+        return "GO_LIVE"
+
+
+GO_LIVE: Any = _GoLive()
+
+
 def answer_from_log(
     session: Session,
     step: pb.StepRef,
@@ -26,17 +36,29 @@ def answer_from_log(
 ) -> Any:
     """Return (or re-raise) the recorded outcome of this call, and log it.
 
+    Returns GO_LIVE instead when the replay has diverged at or before this
+    call (``on_divergence="live"``); the caller then makes the call live and
+    logs it as usual. A new divergence point gets a Diverged event first.
+
     The replay's log entry carries the request as it was made this time (it
     may differ from the recording in masked parts) with the recorded outcome.
     """
-    from ledger.replay.engine import ReplayedError
+    from ledger.replay.engine import DivergencePoint, ReplayedError, diverged_event_body
 
     assert session.replay_index is not None
-    recorded = session.replay_index.take(
+    recorded = session.replay_index.resolve(
         step, kind, match_key=match_key, sha256=request.sha256 if request else match_key
     )
+    if recorded is None:
+        return GO_LIVE
+    if isinstance(recorded, DivergencePoint):
+        ev = new_event(step)
+        ev.diverged.CopyFrom(diverged_event_body(recorded))
+        session.append(ev)
+        return GO_LIVE
     body = getattr(recorded, kind)
     ev = new_event(step)
+    ev.from_log = True
     logged = getattr(ev, kind)
     logged.CopyFrom(body)
     if kind in REQUEST_FIELD and request is not None:

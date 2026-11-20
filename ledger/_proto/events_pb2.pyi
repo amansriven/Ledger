@@ -14,9 +14,20 @@ class Mode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     MODE_UNSPECIFIED: _ClassVar[Mode]
     MODE_RECORD: _ClassVar[Mode]
     MODE_REPLAY: _ClassVar[Mode]
+
+class DivergenceReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    DIVERGENCE_REASON_UNSPECIFIED: _ClassVar[DivergenceReason]
+    DIVERGENCE_REASON_CHANGED_REQUEST: _ClassVar[DivergenceReason]
+    DIVERGENCE_REASON_UNRECORDED_CALL: _ClassVar[DivergenceReason]
+    DIVERGENCE_REASON_CHANGED_KIND: _ClassVar[DivergenceReason]
 MODE_UNSPECIFIED: Mode
 MODE_RECORD: Mode
 MODE_REPLAY: Mode
+DIVERGENCE_REASON_UNSPECIFIED: DivergenceReason
+DIVERGENCE_REASON_CHANGED_REQUEST: DivergenceReason
+DIVERGENCE_REASON_UNRECORDED_CALL: DivergenceReason
+DIVERGENCE_REASON_CHANGED_KIND: DivergenceReason
 
 class StepRef(_message.Message):
     __slots__ = ("namespace", "superstep", "node", "path", "seq")
@@ -110,24 +121,40 @@ class Nondet(_message.Message):
     value: Payload
     def __init__(self, source: _Optional[str] = ..., value: _Optional[_Union[Payload, _Mapping]] = ...) -> None: ...
 
+class Diverged(_message.Message):
+    __slots__ = ("reason", "kind", "recorded", "actual")
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    KIND_FIELD_NUMBER: _ClassVar[int]
+    RECORDED_FIELD_NUMBER: _ClassVar[int]
+    ACTUAL_FIELD_NUMBER: _ClassVar[int]
+    reason: DivergenceReason
+    kind: str
+    recorded: str
+    actual: str
+    def __init__(self, reason: _Optional[_Union[DivergenceReason, str]] = ..., kind: _Optional[str] = ..., recorded: _Optional[str] = ..., actual: _Optional[str] = ...) -> None: ...
+
 class Event(_message.Message):
-    __slots__ = ("run_id", "index", "recorded_at", "step", "run_started", "run_finished", "llm_call", "tool_call", "nondet")
+    __slots__ = ("run_id", "index", "recorded_at", "step", "from_log", "run_started", "run_finished", "llm_call", "tool_call", "nondet", "diverged")
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     INDEX_FIELD_NUMBER: _ClassVar[int]
     RECORDED_AT_FIELD_NUMBER: _ClassVar[int]
     STEP_FIELD_NUMBER: _ClassVar[int]
+    FROM_LOG_FIELD_NUMBER: _ClassVar[int]
     RUN_STARTED_FIELD_NUMBER: _ClassVar[int]
     RUN_FINISHED_FIELD_NUMBER: _ClassVar[int]
     LLM_CALL_FIELD_NUMBER: _ClassVar[int]
     TOOL_CALL_FIELD_NUMBER: _ClassVar[int]
     NONDET_FIELD_NUMBER: _ClassVar[int]
+    DIVERGED_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     index: int
     recorded_at: _timestamp_pb2.Timestamp
     step: StepRef
+    from_log: bool
     run_started: RunStarted
     run_finished: RunFinished
     llm_call: LLMCall
     tool_call: ToolCall
     nondet: Nondet
-    def __init__(self, run_id: _Optional[str] = ..., index: _Optional[int] = ..., recorded_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., step: _Optional[_Union[StepRef, _Mapping]] = ..., run_started: _Optional[_Union[RunStarted, _Mapping]] = ..., run_finished: _Optional[_Union[RunFinished, _Mapping]] = ..., llm_call: _Optional[_Union[LLMCall, _Mapping]] = ..., tool_call: _Optional[_Union[ToolCall, _Mapping]] = ..., nondet: _Optional[_Union[Nondet, _Mapping]] = ...) -> None: ...
+    diverged: Diverged
+    def __init__(self, run_id: _Optional[str] = ..., index: _Optional[int] = ..., recorded_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., step: _Optional[_Union[StepRef, _Mapping]] = ..., from_log: _Optional[bool] = ..., run_started: _Optional[_Union[RunStarted, _Mapping]] = ..., run_finished: _Optional[_Union[RunFinished, _Mapping]] = ..., llm_call: _Optional[_Union[LLMCall, _Mapping]] = ..., tool_call: _Optional[_Union[ToolCall, _Mapping]] = ..., nondet: _Optional[_Union[Nondet, _Mapping]] = ..., diverged: _Optional[_Union[Diverged, _Mapping]] = ...) -> None: ...

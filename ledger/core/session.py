@@ -189,6 +189,15 @@ class Session:
     def is_replay(self) -> bool:
         return self.mode is Mode.REPLAY
 
+    @property
+    def divergences(self) -> list[Any]:
+        """Where a replay stopped matching its recording (``DivergencePoint``s).
+
+        Empty for recordings and for replays that matched throughout. Skipped
+        recorded calls are added when the ``replay`` block exits.
+        """
+        return list(self.replay_index.divergences) if self.replay_index else []
+
 
 @contextmanager
 def activate(session: Session) -> Iterator[Session]:
