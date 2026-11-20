@@ -9,6 +9,8 @@
     graph.invoke(inputs)                      # recorded as a new run
     with ledger.replay(run_id) as session:    # answered from the log
         graph.invoke(inputs)
+    with ledger.fork(run_id, at=step, edit="other text"):   # counterfactual
+        graph.invoke(inputs)
 
 Inside nodes, read the clock, ids and randomness through ``ledger.now()``,
 ``ledger.time()``, ``ledger.uuid4()`` and ``ledger.rng()`` so replays see the
@@ -22,10 +24,22 @@ from ledger.core.store import EventStore
 from ledger.intercept.langgraph import instrument
 from ledger.intercept.llm import wrap
 from ledger.intercept.tools import tool
-from ledger.replay.engine import ReplayDivergence, ReplayedError, ReplayMismatch, replay
+from ledger.replay.engine import (
+    RERUN,
+    DivergencePoint,
+    DivergenceReason,
+    ReplayDivergence,
+    ReplayedError,
+    ReplayMismatch,
+    replay,
+)
+from ledger.replay.fork import StepInfo, fork, steps
 
 __all__ = [
+    "DivergencePoint",
+    "DivergenceReason",
     "EXACT",
+    "RERUN",
     "EventStore",
     "Mode",
     "Normalizer",
@@ -33,12 +47,15 @@ __all__ = [
     "ReplayMismatch",
     "ReplayedError",
     "Session",
+    "StepInfo",
     "current_session",
+    "fork",
     "instrument",
     "now",
     "record",
     "replay",
     "rng",
+    "steps",
     "time",
     "tool",
     "uuid4",

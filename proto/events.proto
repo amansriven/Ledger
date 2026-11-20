@@ -51,13 +51,20 @@ enum Mode {
   MODE_UNSPECIFIED = 0;
   MODE_RECORD = 1;
   MODE_REPLAY = 2;
+  // A replay that edits the outcome of chosen calls, or reruns them live,
+  // and runs everything downstream of them live (ledger.fork).
+  MODE_FORK = 3;
 }
 
 message RunStarted {
   Mode mode = 1;
   Payload input = 2;
-  // Run this one replays, when mode is MODE_REPLAY.
+  // Run this one replays, when mode is MODE_REPLAY or MODE_FORK.
   string source_run_id = 3;
+  // The graph that ran, as "module:attr", when the ledger CLI started the
+  // run. Lets `ledger replay` and `ledger fork` find it again. Empty for
+  // runs started from Python.
+  string graph = 4;
 }
 
 message RunFinished {
@@ -100,6 +107,38 @@ message Nondet {
   Payload value = 2;
 }
 
+enum DivergenceReason {
+  DIVERGENCE_REASON_UNSPECIFIED = 0;
+  // The recording has a call of the same kind at this step, with a
+  // different request.
+  DIVERGENCE_REASON_CHANGED_REQUEST = 1;
+  // The recording has no call at this step.
+  DIVERGENCE_REASON_UNRECORDED_CALL = 2;
+  // The recording has a different kind of call at this step (say, a tool
+  // call where the replay made an LLM call).
+  DIVERGENCE_REASON_CHANGED_KIND = 3;
+  // A fork replaced the recorded outcome of this call with an edited one.
+  // The call event that follows carries the edited outcome.
+  DIVERGENCE_REASON_EDITED = 4;
+  // A fork asked for this call to run live again instead of replaying.
+  DIVERGENCE_REASON_RERUN = 5;
+}
+
+// A replay stopped following the recording at this step: either it made a
+// call that does not match (with on_divergence="live"), or a fork edited or
+// reran the call. Every call downstream of it ran live. Logged in the
+// replay's run at the step, just before the call's own event.
+message Diverged {
+  DivergenceReason reason = 1;
+  // Body kind of the call the replay made: "llm_call", "tool_call", "nondet".
+  string kind = 2;
+  // Match key (or kind, for CHANGED_KIND) the recording has at this step.
+  // Empty for UNRECORDED_CALL.
+  string recorded = 3;
+  // Match key (or kind) of the call the replay made.
+  string actual = 4;
+}
+
 message Event {
   string run_id = 1;
   // Position in the run's log, starting at 0, with no gaps.
@@ -107,6 +146,10 @@ message Event {
   google.protobuf.Timestamp recorded_at = 3;
   // Unset for run-level events.
   StepRef step = 4;
+  // True for a call a replay answered from the recording; false for a call
+  // that went live. (Replay logs written before this field existed have it
+  // false on every call.)
+  bool from_log = 5;
 
   oneof body {
     RunStarted run_started = 10;
@@ -114,5 +157,6 @@ message Event {
     LLMCall llm_call = 12;
     ToolCall tool_call = 13;
     Nondet nondet = 14;
+    Diverged diverged = 15;
   }
 }

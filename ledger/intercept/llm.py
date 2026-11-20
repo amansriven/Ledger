@@ -24,7 +24,7 @@ from typing import Any
 from ledger.core.events import make_payload, pb
 from ledger.core.normalize import LLM_DEFAULT, Normalizer
 from ledger.core.session import current_session
-from ledger.intercept._common import answer_from_log, log_live
+from ledger.intercept._common import GO_LIVE, answer_from_log, log_live
 
 __all__ = ["wrap"]
 
@@ -77,10 +77,12 @@ class _Completions:
         body, request = self._prepare(kwargs)
         step = session.next_step()
         if session.is_replay:
-            return answer_from_log(
+            out = answer_from_log(
                 session, step, "llm_call", request, _decode_completion,
                 match_key=body.request_key,
             )
+            if out is not GO_LIVE:
+                return out
         started = time.perf_counter_ns()
         try:
             resp = self._inner.create(**kwargs)
@@ -100,10 +102,12 @@ class _Completions:
         body, request = self._prepare(kwargs)
         step = session.next_step()
         if session.is_replay:
-            return answer_from_log(
+            out = answer_from_log(
                 session, step, "llm_call", request, _decode_completion,
                 match_key=body.request_key,
             )
+            if out is not GO_LIVE:
+                return out
         started = time.perf_counter_ns()
         try:
             resp = await self._inner.create(**kwargs)
