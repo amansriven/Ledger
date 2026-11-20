@@ -3,6 +3,9 @@
 #   docker compose -f deploy/docker-compose.yml run --rm record    # record runs
 #   docker compose -f deploy/docker-compose.yml run --rm replay    # replay, no network
 #
+#   docker compose -f deploy/docker-compose.yml run --rm bench-record   # 200 runs, both systems
+#   docker compose -f deploy/docker-compose.yml run --rm bench-replay   # replay them, no network
+#
 # `replay` runs with network_mode: none, so it can only succeed if every call
 # is answered from the event log.
 
@@ -46,6 +49,27 @@ services:
     <<: *worker
     network_mode: none
     command: ["ledger", "replay", "--all", "-g", "examples.toy_pipeline:graph_from_env"]
+    profiles: ["jobs"]
+
+  # Replay-fidelity benchmark (bench/replay_fidelity.py), in two phases so
+  # the replay runs in a container with no network at all.
+  bench-record:
+    <<: *worker
+    command: ["python", "-m", "bench.replay_fidelity", "record", "--data", "/data/bench", "--fresh"]
+    depends_on:
+      fakellm:
+        condition: service_healthy
+    profiles: ["jobs"]
+
+  bench-replay:
+    <<: *worker
+    network_mode: none
+    volumes:
+      - ledger-data:/data
+      - ../bench/results:/app/bench/results
+    command:
+      ["python", "-m", "bench.replay_fidelity", "replay", "--data", "/data/bench",
+       "--require-offline", "fakellm:8787"]
     profiles: ["jobs"]
 
 volumes:

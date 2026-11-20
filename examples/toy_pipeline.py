@@ -62,8 +62,14 @@ def _text(resp: Any) -> str:
     return resp.choices[0].message.content or ""
 
 
-def build_graph(llm: Any, *, tools_url: str, model: str) -> InstrumentedGraph:
-    """Build the pipeline. ``llm`` should already be wrapped with ``ledger.wrap``."""
+def build_builder(llm: Any, *, tools_url: str, model: str) -> StateGraph:
+    """The pipeline, uncompiled. ``llm`` should already be wrapped with ``ledger.wrap``.
+
+    Outside a Ledger session the wrapped client, the tool and the clock, uuid
+    and rng shims pass straight through, so the same builder also serves as
+    plain LangGraph (the replay benchmark's baseline compiles it with a
+    checkpointer).
+    """
 
     @ledger.tool(name="search")
     def search(query: str) -> dict[str, Any]:
@@ -112,19 +118,28 @@ def build_graph(llm: Any, *, tools_url: str, model: str) -> InstrumentedGraph:
         builder.add_edge("plan", name)
         builder.add_edge(name, "write")
     builder.add_edge("write", END)
-    return ledger.instrument(builder.compile())
+    return builder
 
 
-def graph_from_env() -> InstrumentedGraph:
+def build_graph(llm: Any, *, tools_url: str, model: str) -> InstrumentedGraph:
+    """Build the pipeline. ``llm`` should already be wrapped with ``ledger.wrap``."""
+    return ledger.instrument(build_builder(llm, tools_url=tools_url, model=model).compile())
+
+
+def builder_from_env() -> StateGraph:
     base_url = os.environ.get("OPENAI_BASE_URL", "http://127.0.0.1:8787/v1")
     llm = ledger.wrap(
         OpenAI(base_url=base_url, api_key=os.environ.get("OPENAI_API_KEY", "fake"), max_retries=0)
     )
-    return build_graph(
+    return build_builder(
         llm,
         tools_url=os.environ.get("TOOLS_URL", "http://127.0.0.1:8787/tools"),
         model=os.environ.get("LEDGER_MODEL", "fake-model"),
     )
+
+
+def graph_from_env() -> InstrumentedGraph:
+    return ledger.instrument(builder_from_env().compile())
 
 
 def recorded_runs(store: ledger.EventStore) -> list[str]:
