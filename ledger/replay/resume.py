@@ -19,6 +19,9 @@ idempotency key it had. The graph runs from the start, as in a replay:
 A run that finished cleanly can't be resumed. One that ended with an error
 can: calls that failed are answered with the same error again, while an
 effect left in doubt gets settled, which is usually what the resume is for.
+A run that failed for good fails the same way again, and its compensations
+(``ledger.effects.saga``) are answered from the log, settled or finished.
+``resumable_runs`` lists only the runs a resume can do something for.
 
 Resuming assumes nothing else is writing to the run: one worker per run.
 Leases and fencing tokens for several workers come with M5.
@@ -31,10 +34,10 @@ from contextlib import contextmanager
 
 from ledger.core.events import body_kind, pb
 from ledger.core.session import Mode, Session, activate
-from ledger.core.store import EventStore
+from ledger.core.store import EventStore, step_key
 from ledger.replay.engine import ReplayIndex, _check_exit
 
-__all__ = ["RunAlreadyFinished", "resume", "resumable_runs", "run_status"]
+__all__ = ["RunAlreadyFinished", "pending_effects", "resume", "resumable_runs", "run_status"]
 
 
 class RunAlreadyFinished(RuntimeError):
@@ -60,8 +63,28 @@ def run_status(events: list[pb.Event]) -> tuple[str, pb.Error | None]:
     return status
 
 
+# Errors that stop a run without deciding it: the process was told to stop.
+STOPPED = frozenset({"builtins.KeyboardInterrupt", "builtins.SystemExit"})
+
+
+def pending_effects(events: list[pb.Event]) -> list[str]:
+    """Step keys of effects whose last event is PENDING: in doubt, or cut off."""
+    last: dict[str, int] = {}
+    for ev in events:
+        if body_kind(ev) == "effect":
+            last[step_key(ev.step)] = ev.effect.phase
+    return sorted(k for k, phase in last.items() if phase == pb.EffectCall.PHASE_PENDING)
+
+
 def resumable_runs(store: EventStore) -> list[str]:
-    """Recordings that stopped without finishing cleanly, oldest first."""
+    """Recordings a resume could finish, oldest first.
+
+    That is every run that stopped without a RunFinished or was stopped (a
+    KeyboardInterrupt), and every failed run with an effect left PENDING:
+    an effect in doubt, or a compensation in doubt. A run that failed for
+    good with every effect settled is final: a resume would only fail the
+    same way. ``resume`` still accepts it by id.
+    """
     out = []
     for run_id in store.run_ids():
         events = list(store.events(run_id, hydrate=False))
@@ -70,7 +93,12 @@ def resumable_runs(store: EventStore) -> list[str]:
             continue
         if first.run_started.mode != pb.MODE_RECORD:
             continue
-        if run_status(events)[0] != "ok":
+        status, error = run_status(events)
+        if status == "ok":
+            continue
+        if status == "unfinished" or (error is not None and error.type in STOPPED):
+            out.append(run_id)
+        elif pending_effects(list(store.events(run_id, hydrate=False))):
             out.append(run_id)
     return out
 

@@ -5,6 +5,7 @@ Enough of Stripe's REST API for the official ``stripe`` SDK to talk to it
 same code against this server and against Stripe in test mode:
 
     GET  /v1/charges/{id}        a charge, with amount_refunded and refunded
+    POST /v1/charges/{id}        metadata[k]= updates (an empty value removes k)
     POST /v1/refunds             charge=, amount= (default: what's left), reason=, metadata[k]=
     GET  /v1/refunds?charge=     refunds of a charge, newest first
 
@@ -182,6 +183,11 @@ class FakeStripeServer(ThreadingHTTPServer):
                 "requests": dict(self._counts),
             }
 
+    def charge(self, charge_id: str) -> dict[str, Any]:
+        with self._lock:
+            charge = self.charges[charge_id]
+            return dict(charge, metadata=dict(charge["metadata"]))
+
     def refunds_of(self, charge_id: str) -> list[dict[str, Any]]:
         with self._lock:
             return [dict(r) for r in self.refunds.values() if r["charge"] == charge_id]
@@ -207,7 +213,7 @@ class FakeStripeServer(ThreadingHTTPServer):
                         "invalid_request_error", "No such charge", code="resource_missing",
                         param="id",
                     )
-                return 200, dict(charge)
+                return 200, dict(charge, metadata=dict(charge["metadata"]))
             if path == "/v1/refunds":
                 charge_id = query.get("charge", [""])[0]
                 items = [r for r in self.refunds.values() if not charge_id or r["charge"] == charge_id]
@@ -241,6 +247,8 @@ class FakeStripeServer(ThreadingHTTPServer):
                 return status, body, True
             if path == "/v1/refunds":
                 status, body = self._create_refund(params)
+            elif path.startswith("/v1/charges/"):
+                status, body = self._update_charge(path.rsplit("/", 1)[1], params)
             else:
                 status, body = 404, _error(
                     "invalid_request_error", f"Unrecognized request URL (POST: {path})"
@@ -250,6 +258,20 @@ class FakeStripeServer(ThreadingHTTPServer):
             if fault == "drop_after":
                 raise _Abort
             return status, body, False
+
+    def _update_charge(self, charge_id: str, params: dict[str, Any]) -> tuple[int, Any]:
+        charge = self.charges.get(charge_id)
+        if charge is None:
+            return 404, _error(
+                "invalid_request_error", f"No such charge: '{charge_id}'",
+                code="resource_missing", param="id",
+            )
+        for key, value in dict(params.get("metadata", {})).items():
+            if value == "":
+                charge["metadata"].pop(key, None)
+            else:
+                charge["metadata"][key] = value
+        return 200, dict(charge, metadata=dict(charge["metadata"]))
 
     def _create_refund(self, params: dict[str, Any]) -> tuple[int, Any]:
         charge = self.charges.get(params.get("charge", ""))

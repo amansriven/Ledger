@@ -86,7 +86,7 @@ def test_a_crash_during_the_resume_is_resumed_again(agent, stripe_server, store)
     with crash_after(store, 2):
         with ledger.record(store) as rec:
             agent.invoke(ticket(charge))
-    with crash_after(store, 2):  # run_resumed, PENDING; dies before CONFIRMED
+    with crash_after(store, 2):  # run_resumed, the claim's PENDING; dies before CONFIRMED
         with ledger.resume(rec.run_id, store):
             agent.invoke(ticket(charge))
     with ledger.resume(rec.run_id, store) as again:
@@ -163,4 +163,4 @@ def test_cli_resumes_every_unfinished_run(fake_server, stripe_server, tmp_path, 
     for charge in charges:
         assert len(stripe_server.refunds_of(charge["id"])) == 1
     cli.main(["--db", db, "runs"])
-    assert capsys.readouterr().out.count("ok  calls=3 live=3 resumed=1") == 2
+    assert capsys.readouterr().out.count("ok  calls=4 live=4 resumed=1") == 2

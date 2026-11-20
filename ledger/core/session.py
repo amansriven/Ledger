@@ -148,6 +148,8 @@ class Session:
         # Set by ledger.resume: which resume this is, and how the run had ended.
         self.resume_attempt = 0
         self.previous_error: pb.Error | None = None
+        # Compensations of confirmed effects, in the order they were confirmed.
+        self._compensations: list[Any] = []
         self._counters: dict[tuple[str, int, str, str], int] = {}
         self._rngs: dict[tuple[str, int, str, str], random.Random] = {}
         self._lock = threading.Lock()
@@ -178,6 +180,18 @@ class Session:
                 self.stats.live_calls += 1
             else:
                 self.stats.replayed_calls += 1
+
+    # Sagas
+
+    def register_compensation(self, compensation: Any) -> None:
+        with self._lock:
+            self._compensations.append(compensation)
+
+    def take_compensations(self) -> list[Any]:
+        """The registered compensations, oldest first; clears them."""
+        with self._lock:
+            out, self._compensations = self._compensations, []
+            return out
 
     # Logging
 

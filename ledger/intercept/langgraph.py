@@ -4,7 +4,8 @@
     graph = ledger.instrument(builder.compile())
 
 ``instrument`` returns a proxy for a compiled graph. ``invoke``/``ainvoke``
-log the run's input and output. If no session is active, each invocation is
+log the run's input and output, and when the graph fails for good, undo its
+confirmed effects that have compensations (``ledger.effects.saga``). If no session is active, each invocation is
 recorded as a new run in the default store (``$LEDGER_DB`` or ``ledger.db``).
 Inside ``ledger.replay(...)`` the same call replays instead.
 
@@ -41,12 +42,22 @@ class InstrumentedGraph:
         return self._invoke(session, input, config, kwargs)
 
     def _invoke(self, session: Session, input: Any, config: Any, kwargs: dict[str, Any]) -> Any:
+        from ledger.effects.saga import SagaIncomplete, compensate, fails_for_good
+
         session.run_started(input)
         try:
             output = self._graph.invoke(input, config, **kwargs)
         except BaseException as exc:
-            session.run_finished(error=exc)
-            raise
+            final: BaseException = exc
+            if fails_for_good(exc):
+                try:
+                    compensate(session, exc)
+                except SagaIncomplete as incomplete:
+                    final = incomplete
+            session.run_finished(error=final)
+            if final is exc:
+                raise
+            raise final from exc
         session.run_finished(output)
         return output
 
@@ -60,12 +71,22 @@ class InstrumentedGraph:
     async def _ainvoke(
         self, session: Session, input: Any, config: Any, kwargs: dict[str, Any]
     ) -> Any:
+        from ledger.effects.saga import SagaIncomplete, acompensate, fails_for_good
+
         session.run_started(input)
         try:
             output = await self._graph.ainvoke(input, config, **kwargs)
         except BaseException as exc:
-            session.run_finished(error=exc)
-            raise
+            final: BaseException = exc
+            if fails_for_good(exc):
+                try:
+                    await acompensate(session, exc)
+                except SagaIncomplete as incomplete:
+                    final = incomplete
+            session.run_finished(error=final)
+            if final is exc:
+                raise
+            raise final from exc
         session.run_finished(output)
         return output
 

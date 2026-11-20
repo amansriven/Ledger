@@ -95,6 +95,31 @@ def test_exception_with_keyword_only_init_keeps_type_and_text():
     assert type(again) is NeedsKeywords and str(again) == "code 7"
 
 
+def test_stripe_errors_keep_type_and_text():
+    import stripe
+
+    original = stripe.InvalidRequestError("Charge ch_1 has already been refunded.", "charge")
+    again = _replayed(original)
+    assert isinstance(again, stripe.InvalidRequestError)
+    assert str(again) == str(original)
+
+
+class TextFromInit(Exception):
+    """A __str__ that needs what __init__ sets, and an __init__ replay can't call."""
+
+    def __init__(self, *, detail: str) -> None:
+        super().__init__()
+        self.detail = detail
+
+    def __str__(self) -> str:
+        return f"failed: {self.detail}"
+
+
+def test_exception_whose_str_needs_init_keeps_its_text():
+    again = _replayed(TextFromInit(detail="nope"))
+    assert isinstance(again, TextFromInit) and str(again) == "failed: nope"
+
+
 def test_unloaded_exception_class_falls_back_to_replayed_error():
     from ledger.core.events import pb
     from ledger.replay.engine import replayed_exception

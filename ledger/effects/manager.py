@@ -22,6 +22,10 @@ A replay answers an effect from the log and never calls the function. A
 replay or fork that would have to run an effect live (it diverged upstream,
 or a fork reruns it) raises ``LiveEffectRefused`` unless it was started with
 ``live_effects=True``, so a counterfactual never refunds anyone by accident.
+
+An effect with a ``compensate`` function is part of the run's saga: if the
+run later fails for good, the compensation undoes it (see
+``ledger.effects.saga``).
 """
 
 from __future__ import annotations
@@ -32,7 +36,8 @@ import inspect
 import random
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any, TypeVar, overload
 
 from ledger.core.events import make_error, make_payload, new_event, pb
@@ -42,7 +47,7 @@ from ledger.core.store import step_key
 from ledger.effects.idempotency import idempotency_key
 from ledger.intercept._common import GO_LIVE, Settle, answer_from_log
 
-__all__ = ["EffectInDoubt", "LiveEffectRefused", "effect"]
+__all__ = ["Compensation", "EffectInDoubt", "LiveEffectRefused", "Policy", "effect"]
 
 F = TypeVar("F", bound=Callable[..., Any])
 KEY_ARG = "idempotency_key"
@@ -81,6 +86,29 @@ def _accepts_key(fn: Callable[..., Any]) -> bool:
     )
 
 
+@dataclass(frozen=True)
+class Policy:
+    """How an effect's attempts are retried."""
+
+    retry_on: tuple[type[BaseException], ...]
+    attempts: int
+    backoff: float
+
+
+@dataclass(frozen=True)
+class Compensation:
+    """What undoes a confirmed effect, if the run fails for good."""
+
+    step: pb.StepRef
+    name: str
+    fn: Callable[..., Any]
+    args: tuple[Any, ...]
+    kwargs: dict[str, Any]
+    result: Any
+    policy: Policy
+    normalizer: Normalizer
+
+
 class _Call:
     """One effect call inside a session: its log entries and its retries."""
 
@@ -91,12 +119,18 @@ class _Call:
         normalizer: Normalizer,
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
+        *,
+        step: pb.StepRef | None = None,
+        undoes: Any = None,
     ) -> None:
         if KEY_ARG in kwargs:
             raise TypeError(f"Ledger derives {KEY_ARG} for effect {name}; don't pass one")
         self.session = session
-        self.step = session.next_step()
-        self.request = make_payload({"args": list(args), "kwargs": kwargs})
+        self.step = step if step is not None else session.next_step()
+        request: dict[str, Any] = {"args": list(args), "kwargs": kwargs}
+        if step is not None:
+            request["undoes"] = undoes  # a compensation: the result it undoes
+        self.request = make_payload(request)
         self.body = pb.EffectCall(
             name=name,
             args=self.request,
@@ -185,21 +219,102 @@ def _start(call: _Call) -> tuple[pb.Event | None, Any]:
     return None, GO_LIVE
 
 
+Invoke = Callable[[str], Any]
+
+
+def execute(call: _Call, invoke: Invoke, reconcile: Invoke | None, policy: Policy) -> Any:
+    """Answer ``call`` from the log, or settle it, or run it: the write-ahead protocol.
+
+    ``invoke(key)`` makes the call; ``reconcile(key)`` looks a settled
+    outcome up (None if the effect didn't happen).
+    """
+    settling, out = _start(call)
+    if out is not GO_LIVE:
+        return out
+    key = call.body.idempotency_key
+    done = settling.effect.attempts if settling is not None else 0
+    if settling is not None and reconcile is not None:
+        found = reconcile(key)
+        if found is not None:
+            call.reconciled(found, done)
+            return found
+    for attempt in range(1, policy.attempts + 1):
+        try:
+            result = invoke(key)
+        except policy.retry_on as exc:
+            if attempt == policy.attempts:
+                raise call.in_doubt(exc, done + attempt) from exc
+            time.sleep(_delay(policy.backoff, attempt))
+        except Exception as exc:
+            call.failed(exc, done + attempt)
+            raise
+        else:
+            call.confirmed(result, done + attempt)
+            return result
+    raise AssertionError("unreachable")
+
+
+async def aexecute(
+    call: _Call,
+    invoke: Callable[[str], Awaitable[Any]],
+    reconcile: Callable[[str], Any] | None,
+    policy: Policy,
+) -> Any:
+    """``execute`` for async effects. ``reconcile`` may be sync or async."""
+    settling, out = _start(call)
+    if out is not GO_LIVE:
+        return out
+    key = call.body.idempotency_key
+    done = settling.effect.attempts if settling is not None else 0
+    if settling is not None and reconcile is not None:
+        found = reconcile(key)
+        if inspect.isawaitable(found):
+            found = await found
+        if found is not None:
+            call.reconciled(found, done)
+            return found
+    for attempt in range(1, policy.attempts + 1):
+        try:
+            result = await invoke(key)
+        except policy.retry_on as exc:
+            if attempt == policy.attempts:
+                raise call.in_doubt(exc, done + attempt) from exc
+            await asyncio.sleep(_delay(policy.backoff, attempt))
+        except Exception as exc:
+            call.failed(exc, done + attempt)
+            raise
+        else:
+            call.confirmed(result, done + attempt)
+            return result
+    raise AssertionError("unreachable")
+
+
 def _wrap(
     fn: F,
     name: str,
     normalizer: Normalizer,
-    retry_on: tuple[type[BaseException], ...],
-    attempts: int,
-    backoff: float,
+    policy: Policy,
     reconcile: Callable[..., Any] | None,
+    compensate: Callable[..., Any] | None,
 ) -> F:
     if not _accepts_key(fn):
         raise TypeError(f"effect {name} must accept an {KEY_ARG} keyword argument")
-    if reconcile is not None and not _accepts_key(reconcile):
-        raise TypeError(f"reconcile for effect {name} must accept an {KEY_ARG} keyword argument")
-    if attempts < 1:
+    for role, other in (("reconcile", reconcile), ("compensate", compensate)):
+        if other is not None and not _accepts_key(other):
+            raise TypeError(f"{role} for effect {name} must accept an {KEY_ARG} keyword argument")
+    if policy.attempts < 1:
         raise ValueError("attempts must be at least 1")
+
+    def register(call: _Call, args: tuple[Any, ...], kwargs: dict[str, Any], result: Any) -> None:
+        if compensate is not None:
+            call.session.register_compensation(
+                Compensation(call.step, name, compensate, args, kwargs, result, policy, normalizer)
+            )
+
+    def looker(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Invoke | None:
+        if reconcile is None:
+            return None
+        return lambda key: reconcile(*args, **kwargs, **{KEY_ARG: key})
 
     if inspect.iscoroutinefunction(fn):
 
@@ -210,32 +325,12 @@ def _wrap(
                 kwargs.setdefault(KEY_ARG, uuid.uuid4().hex)
                 return await fn(*args, **kwargs)
             call = _Call(session, name, normalizer, args, kwargs)
-            settling, out = _start(call)
-            if out is not GO_LIVE:
-                return out
-            key = {KEY_ARG: call.body.idempotency_key}
-            done = settling.effect.attempts if settling is not None else 0
-            if settling is not None and reconcile is not None:
-                found = reconcile(*args, **kwargs, **key)
-                if inspect.isawaitable(found):
-                    found = await found
-                if found is not None:
-                    call.reconciled(found, done)
-                    return found
-            for attempt in range(1, attempts + 1):
-                try:
-                    result = await fn(*args, **kwargs, **key)
-                except retry_on as exc:
-                    if attempt == attempts:
-                        raise call.in_doubt(exc, done + attempt) from exc
-                    await asyncio.sleep(_delay(backoff, attempt))
-                except Exception as exc:
-                    call.failed(exc, done + attempt)
-                    raise
-                else:
-                    call.confirmed(result, done + attempt)
-                    return result
-            raise AssertionError("unreachable")
+            result = await aexecute(
+                call, lambda key: fn(*args, **kwargs, **{KEY_ARG: key}),
+                looker(args, kwargs), policy,
+            )
+            register(call, args, kwargs, result)
+            return result
 
         async_wrapper.__ledger_effect__ = name  # type: ignore[attr-defined]
         return async_wrapper  # type: ignore[return-value]
@@ -247,30 +342,11 @@ def _wrap(
             kwargs.setdefault(KEY_ARG, uuid.uuid4().hex)
             return fn(*args, **kwargs)
         call = _Call(session, name, normalizer, args, kwargs)
-        settling, out = _start(call)
-        if out is not GO_LIVE:
-            return out
-        key = {KEY_ARG: call.body.idempotency_key}
-        done = settling.effect.attempts if settling is not None else 0
-        if settling is not None and reconcile is not None:
-            found = reconcile(*args, **kwargs, **key)
-            if found is not None:
-                call.reconciled(found, done)
-                return found
-        for attempt in range(1, attempts + 1):
-            try:
-                result = fn(*args, **kwargs, **key)
-            except retry_on as exc:
-                if attempt == attempts:
-                    raise call.in_doubt(exc, done + attempt) from exc
-                time.sleep(_delay(backoff, attempt))
-            except Exception as exc:
-                call.failed(exc, done + attempt)
-                raise
-            else:
-                call.confirmed(result, done + attempt)
-                return result
-        raise AssertionError("unreachable")
+        result = execute(
+            call, lambda key: fn(*args, **kwargs, **{KEY_ARG: key}), looker(args, kwargs), policy
+        )
+        register(call, args, kwargs, result)
+        return result
 
     wrapper.__ledger_effect__ = name  # type: ignore[attr-defined]
     return wrapper  # type: ignore[return-value]
@@ -286,6 +362,7 @@ def effect(
     attempts: int = ...,
     backoff: float = ...,
     reconcile: Callable[..., Any] | None = None,
+    compensate: Callable[..., Any] | None = None,
     normalizer: Normalizer | None = None,
 ) -> Callable[[F], F]: ...
 
@@ -298,6 +375,7 @@ def effect(
     attempts: int = 3,
     backoff: float = 0.25,
     reconcile: Callable[..., Any] | None = None,
+    compensate: Callable[..., Any] | None = None,
     normalizer: Normalizer | None = None,
 ) -> Any:
     """Make a side-effecting function happen once per run step.
@@ -315,6 +393,10 @@ def effect(
     it (or when it returns None) the resume calls the effect again with the
     same key, which is safe as long as the API still remembers the key.
 
+    ``compensate`` undoes the effect if the run later fails for good. It is
+    called as ``compensate(result, *args, idempotency_key=..., **kwargs)``
+    and runs as an effect itself, with its own key and the same retries.
+
     Outside a session the function runs as is, with a fresh random key
     unless the caller passes one.
     """
@@ -322,7 +404,7 @@ def effect(
     def decorate(f: F) -> F:
         return _wrap(
             f, name or f"{f.__module__}.{f.__qualname__}", normalizer or DEFAULT,
-            tuple(retry_on), attempts, backoff, reconcile,
+            Policy(tuple(retry_on), attempts, backoff), reconcile, compensate,
         )
 
     return decorate(fn) if fn is not None else decorate
