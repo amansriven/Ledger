@@ -46,8 +46,8 @@ def answer_from_log(
     from ledger.replay.engine import (
         DivergencePoint,
         DivergenceReason,
-        ReplayedError,
         diverged_event_body,
+        replayed_exception,
     )
 
     assert session.replay_index is not None
@@ -74,7 +74,7 @@ def answer_from_log(
     session.append(ev)
     session.count_call(live=False, kind=kind)
     if kind != "nondet" and body.HasField("error"):
-        raise ReplayedError(body.error)
+        raise replayed_exception(body.error)
     return decode(load_payload(getattr(body, RESPONSE_FIELD[kind])))
 
 

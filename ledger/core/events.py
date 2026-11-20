@@ -65,7 +65,12 @@ def load_payload(payload: pb.Payload) -> Any:
 
 def make_error(exc: BaseException) -> pb.Error:
     cls = type(exc)
-    return pb.Error(type=f"{cls.__module__}.{cls.__qualname__}", message=str(exc))
+    error = pb.Error(type=f"{cls.__module__}.{cls.__qualname__}", message=str(exc))
+    try:
+        error.args.CopyFrom(make_payload(list(exc.args)))
+    except (TypeError, ValueError):
+        pass  # args that don't serialize; replay falls back to the message
+    return error
 
 
 def new_event(step: pb.StepRef | None = None) -> pb.Event:
