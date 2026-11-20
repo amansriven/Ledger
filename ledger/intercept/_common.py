@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ledger.core.events import load_payload, make_error, make_payload, new_event, pb
-from ledger.core.session import Session
+from ledger.core.session import Mode, Session
 from ledger.core.store import step_key
 
 # Name of the field that holds the call's output, per event body kind.
@@ -28,6 +28,14 @@ class _GoLive:
 GO_LIVE: Any = _GoLive()
 
 
+class Settle:
+    """Returned by answer_from_log when a resume reaches an effect the log
+    left PENDING: the effect manager settles it before going on."""
+
+    def __init__(self, event: pb.Event) -> None:
+        self.event = event
+
+
 def answer_from_log(
     session: Session,
     step: pb.StepRef,
@@ -45,6 +53,9 @@ def answer_from_log(
 
     The replay's log entry carries the request as it was made this time (it
     may differ from the recording in masked parts) with the recorded outcome.
+
+    A resume continues the recording's own log, so a call answered from it is
+    not logged again; an effect it left PENDING comes back as ``Settle``.
     """
     from ledger.replay.engine import (
         DivergencePoint,
@@ -67,13 +78,33 @@ def answer_from_log(
             return GO_LIVE
         return _serve_edit(session, step, kind, request, decode, match_key, recorded.step)
     body = getattr(recorded, kind)
+    resuming = session.mode is Mode.RESUME
     if kind == "effect" and body.phase == pb.EffectCall.PHASE_PENDING:
+        if resuming:
+            return Settle(recorded)
         from ledger.effects.manager import EffectInDoubt
 
         # The recording crashed or gave up with this effect in doubt.
         raise EffectInDoubt(
             body.name, step_key(recorded.step), body.idempotency_key, body.attempts
         )
+    if not resuming:
+        _log_served(session, step, kind, body, request, match_key)
+    session.count_call(live=False, kind=kind)
+    if kind != "nondet" and body.HasField("error"):
+        raise replayed_exception(body.error)
+    return decode(load_payload(getattr(body, RESPONSE_FIELD[kind])))
+
+
+def _log_served(
+    session: Session,
+    step: pb.StepRef,
+    kind: str,
+    body: Any,
+    request: pb.Payload | None,
+    match_key: str,
+) -> None:
+    """Log a call a replay answered from its recording."""
     ev = new_event(step)
     ev.from_log = True
     logged = getattr(ev, kind)
@@ -82,10 +113,6 @@ def answer_from_log(
         getattr(logged, REQUEST_FIELD[kind]).CopyFrom(request)
         setattr(logged, KEY_FIELD[kind], match_key)
     session.append(ev)
-    session.count_call(live=False, kind=kind)
-    if kind != "nondet" and body.HasField("error"):
-        raise replayed_exception(body.error)
-    return decode(load_payload(getattr(body, RESPONSE_FIELD[kind])))
 
 
 def _serve_edit(

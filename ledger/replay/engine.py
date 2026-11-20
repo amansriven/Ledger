@@ -269,10 +269,14 @@ class ReplayIndex:
         *,
         on_divergence: OnDivergence = "raise",
         forks: Mapping[str, Any] | None = None,
+        resume: bool = False,
     ) -> None:
         if on_divergence not in ("raise", "live"):
             raise ValueError(f"on_divergence must be 'raise' or 'live', not {on_divergence!r}")
         self.on_divergence = on_divergence
+        # A resume: calls past the end of the log run live (and are logged)
+        # instead of being unrecorded calls.
+        self.resume = resume
         self.calls: dict[str, pb.Event] = {}
         self.output_sha256 = ""
         # The error the recorded run ended with, if it failed.
@@ -355,6 +359,8 @@ class ReplayIndex:
         key = step_key(step)
         if key in self.forks:
             return self._fork_point(step, key, kind, match_key)
+        if self.resume and key not in self.calls:
+            return None
         with self._lock:
             if any(is_downstream(step, p.ref) for p in self.divergences if p.ref is not None):
                 return None

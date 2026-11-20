@@ -7,7 +7,8 @@ harmless). ``decide`` applies the refund policy in code. ``refund`` creates
 the refund through ``ledger.effect``, so it is made once per run whatever
 fails around it: every attempt carries the same idempotency key, derived
 from the run id and the step, and the key also goes in the refund's
-metadata so it can be found again later. ``reply`` has the LLM draft the
+metadata. After a crash, ``ledger.resume`` looks the refund up by that
+metadata before trying again. ``reply`` has the LLM draft the
 answer to the customer.
 
 The same code runs against the fake Stripe server
@@ -122,7 +123,18 @@ def build_builder(llm: Any, client: stripe.StripeClient, *, model: str) -> State
     def get_charge(charge_id: str) -> dict[str, Any]:
         return client.v1.charges.retrieve(charge_id).to_dict()
 
-    @ledger.effect(name="stripe.refunds.create", retry_on=IN_DOUBT)
+    def find_refund(
+        charge_id: str, amount: int, reason: str, ticket_id: str, *, idempotency_key: str
+    ) -> dict[str, Any] | None:
+        """The refund this key made, if Stripe has it: settles a refund left in
+        doubt without relying on Stripe still remembering the key."""
+        for refund in client.v1.refunds.list({"charge": charge_id, "limit": 100}).auto_paging_iter():
+            found = refund.to_dict()
+            if (found.get("metadata") or {}).get("ledger_key") == idempotency_key:
+                return found
+        return None
+
+    @ledger.effect(name="stripe.refunds.create", retry_on=IN_DOUBT, reconcile=find_refund)
     def create_refund(
         charge_id: str, amount: int, reason: str, ticket_id: str, *, idempotency_key: str
     ) -> dict[str, Any]:

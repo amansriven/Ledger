@@ -2,28 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 import pytest
-from openai import OpenAI
 
 import ledger
 from examples import refund_agent
 from ledger.core.events import body_kind, load_payload, pb
-from ledger.testing.fake_stripe import FakeStripeServer
-
-
-@pytest.fixture
-def stripe_server() -> Iterator[FakeStripeServer]:
-    with FakeStripeServer() as server:
-        yield server
-
-
-@pytest.fixture
-def agent(fake_server, stripe_server):
-    llm = ledger.wrap(OpenAI(base_url=f"{fake_server.base_url}/v1", api_key="x", max_retries=0))
-    client = refund_agent.stripe_client("sk_test_fake", stripe_server.base_url)
-    return refund_agent.build_graph(llm, client, model="fake-model")
+from tests.conftest import crash_after, replays_strictly
 
 
 @pytest.fixture(autouse=True)
@@ -157,3 +141,76 @@ def test_the_real_key_is_read_only_for_stripe_itself(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="STRIPE_SECRET_KEY"):
         refund_agent.stripe_settings(tmp_path / "missing.env")
     assert "OTHER" not in __import__("os").environ
+
+
+# Crashes: kill the agent partway (every later write to the log fails, like
+# kill -9), then resume it.
+
+
+def kinds(store, run_id):
+    return [body_kind(ev) for ev in store.events(run_id)]
+
+
+# A clean run of the agent logs 6 events: run_started, the charge lookup,
+# the refund's PENDING and CONFIRMED, the reply, run_finished. Crash after
+# each of the first five (after the sixth there is nothing left to lose).
+@pytest.mark.parametrize("n", range(1, 6))
+def test_a_crash_anywhere_resumes_to_exactly_one_refund(agent, stripe_server, store, n):
+    charge = stripe_server.create_charge(2500)
+    with crash_after(store, n):
+        with ledger.record(store) as rec:
+            agent.invoke(ticket(charge))
+    run_id = rec.run_id
+    assert ledger.resumable_runs(store) == [run_id]
+    before = list(store.events(run_id))
+
+    with ledger.resume(run_id, store) as res:
+        out = agent.invoke(ticket(charge))
+
+    [refund] = stripe_server.refunds_of(charge["id"])
+    assert out["refund"]["id"] == refund["id"] and refund["amount"] == 2500
+    after = list(store.events(run_id))
+    assert after[:n] == before  # the prefix is untouched
+    assert body_kind(after[n]) == "run_resumed" and after[n].run_resumed.attempt == 1
+    assert kinds(store, run_id)[-1] == "run_finished"
+    assert ledger.resumable_runs(store) == []
+    # Only what wasn't logged ran: the refund is never asked for twice when
+    # its outcome was logged, and at most twice (same key) when it wasn't.
+    posts = stripe_server.state()["requests"].get("POST /v1/refunds", 0)
+    assert posts == 1  # at n=3 Stripe made it before the crash and reconcile found it
+    assert res.stats.replayed_calls + res.stats.live_calls == 3
+    replays_strictly(store, run_id, agent, out)
+
+
+def test_the_crash_that_matters_is_settled_by_reconcile(agent, stripe_server, store):
+    """Killed after Stripe made the refund, before CONFIRMED was logged."""
+    charge = stripe_server.create_charge(700)
+    with crash_after(store, 3):  # run_started, lookup, PENDING
+        with ledger.record(store) as rec:
+            agent.invoke(ticket(charge))
+    # The crash hit the CONFIRMED append, so Stripe has the refund.
+    assert len(stripe_server.refunds_of(charge["id"])) == 1
+
+    with ledger.resume(rec.run_id, store):
+        agent.invoke(ticket(charge))
+    assert stripe_server.state()["requests"]["POST /v1/refunds"] == 1  # not asked again
+    settled = [ev.effect for ev in store.events(rec.run_id) if body_kind(ev) == "effect"][-1]
+    assert settled.phase == pb.EffectCall.PHASE_CONFIRMED and settled.reconciled
+    assert len(stripe_server.refunds_of(charge["id"])) == 1
+
+
+def test_an_effect_in_doubt_is_settled_on_resume(agent, stripe_server, store):
+    charge = stripe_server.create_charge(900)
+    stripe_server.add_fault("/v1/refunds", "drop_after", count=3)
+    with ledger.record(store) as rec:
+        with pytest.raises(ledger.EffectInDoubt):
+            agent.invoke(ticket(charge))
+    assert ledger.resumable_runs(store) == [rec.run_id]
+
+    with ledger.resume(rec.run_id, store) as res:
+        out = agent.invoke(ticket(charge))
+    assert res.previous_error is not None and "EffectInDoubt" in res.previous_error.type
+    [refund] = stripe_server.refunds_of(charge["id"])
+    assert out["refund"]["id"] == refund["id"]
+    assert stripe_server.state()["requests"]["POST /v1/refunds"] == 3  # none from the resume
+    replays_strictly(store, rec.run_id, agent, out)
