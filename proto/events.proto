@@ -45,6 +45,10 @@ message Error {
   // Exception class, e.g. "openai.APIConnectionError".
   string type = 1;
   string message = 2;
+  // The exception's args, as a JSON list, when they serialize. Replay
+  // rebuilds the exception from its class and these args, so code that
+  // catches it sees the same type and str() as when it was recorded.
+  Payload args = 3;
 }
 
 enum Mode {

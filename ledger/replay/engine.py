@@ -55,6 +55,7 @@ __all__ = [
     "ReplayedError",
     "is_downstream",
     "replay",
+    "replayed_exception",
 ]
 
 CALL_KINDS = ("llm_call", "tool_call", "nondet")
@@ -141,12 +142,85 @@ class ReplayDivergence(RuntimeError):
 
 
 class ReplayedError(RuntimeError):
-    """A recorded call raised; replay raises this in its place."""
+    """A recorded call raised an exception replay could not rebuild.
+
+    Replay normally raises the recorded exception's own class (see
+    ``replayed_exception``); this stands in when that class isn't loaded or
+    can't be constructed.
+    """
 
     def __init__(self, error: pb.Error) -> None:
         super().__init__(f"{error.type}: {error.message}")
         self.original_type = error.type
         self.original_message = error.message
+
+
+REPLAYED_ATTR = "__ledger_replayed__"
+
+
+def _loaded_class(qualified: str) -> type[BaseException] | None:
+    """The exception class named ``module.qualname``, if its module is loaded.
+
+    Looks only in ``sys.modules``: the log names the class, but replay never
+    imports anything because of it.
+    """
+    import sys
+
+    parts = qualified.split(".")
+    for cut in range(len(parts) - 1, 0, -1):
+        module = sys.modules.get(".".join(parts[:cut]))
+        if module is None:
+            continue
+        obj: Any = module
+        for name in parts[cut:]:
+            obj = getattr(obj, name, None)
+            if obj is None:
+                return None
+        if isinstance(obj, type) and issubclass(obj, BaseException):
+            return obj
+        return None
+    return None
+
+
+def replayed_exception(error: pb.Error) -> BaseException:
+    """The exception a recorded call raised, rebuilt for replay.
+
+    Same class, built from the recorded args (or the message, for logs
+    without args), so ``except SomeError`` and ``str(exc)`` behave as they
+    did when recorded. A class whose constructor wants something else (say,
+    a keyword-only ``request=``) is created without running its
+    ``__init__``: ``isinstance`` and ``str`` hold, attributes set in
+    ``__init__`` are missing. Falls back to ReplayedError when the class
+    isn't loaded. The result carries ``__ledger_replayed__ = True``.
+    """
+    cls = _loaded_class(error.type)
+    exc: BaseException | None = None
+    if cls is not None:
+        args = load_payload(error.args) if error.HasField("args") else [error.message]
+        if not isinstance(args, list):
+            args = [error.message]
+        try:
+            exc = cls(*args)
+        except Exception:
+            try:
+                exc = cls.__new__(cls, *args)
+                BaseException.__init__(exc, *args)
+            except Exception:
+                exc = None
+        if exc is not None and str(exc) != error.message:
+            # A constructor that reformats its args; keep the recorded text.
+            try:
+                exc = cls.__new__(cls, error.message)
+                BaseException.__init__(exc, error.message)
+            except Exception:
+                exc = None
+    if exc is None:
+        exc = ReplayedError(error)
+    try:
+        setattr(exc, REPLAYED_ATTR, True)
+    except AttributeError:
+        pass
+    return exc
 
 
 def _recorded_match(event: pb.Event) -> tuple[str, str]:

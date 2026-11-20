@@ -58,12 +58,14 @@ class Payload(_message.Message):
     def __init__(self, sha256: _Optional[str] = ..., json: _Optional[bytes] = ...) -> None: ...
 
 class Error(_message.Message):
-    __slots__ = ("type", "message")
+    __slots__ = ("type", "message", "args")
     TYPE_FIELD_NUMBER: _ClassVar[int]
     MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    ARGS_FIELD_NUMBER: _ClassVar[int]
     type: str
     message: str
-    def __init__(self, type: _Optional[str] = ..., message: _Optional[str] = ...) -> None: ...
+    args: Payload
+    def __init__(self, type: _Optional[str] = ..., message: _Optional[str] = ..., args: _Optional[_Union[Payload, _Mapping]] = ...) -> None: ...
 
 class RunStarted(_message.Message):
     __slots__ = ("mode", "input", "source_run_id", "graph")

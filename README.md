@@ -2,7 +2,7 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay), week 3.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. A property test and the 200-run replay benchmark come next. Exactly-once effects, blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay), week 3.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. Exactly-once effects, blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
 
 ## Integration
 
@@ -74,6 +74,42 @@ The fork is logged as its own run (`<source>.fork-<n>`, mode `MODE_FORK`), with 
 
 One limitation, for replays and forks alike: step keys don't carry the parent graph's superstep, so calls in a different namespace from a divergence or fork step (inside or around a subgraph) can't be placed relative to it. Every such call made after the divergence goes live, which is safe but can run more live calls than needed in graphs with subgraphs.
 
+## Errors
+
+A call that raised while recording raises again on replay, as the same exception class with the same args, so `except ValueError:` in a node behaves the same both times. Replay only looks the class up among modules that are already imported; it never imports anything because the log names it. A class whose constructor needs something else (say, `openai.APIConnectionError`, which wants `request=`) is created without running its `__init__`: `isinstance` and `str()` hold, but attributes set in `__init__` are missing. If the class isn't loaded at all, replay raises `ledger.ReplayedError` instead. Every replayed exception has `__ledger_replayed__ = True`.
+
+## Property tests
+
+`tests/test_properties.py` uses Hypothesis to generate layered graphs: random fan-outs, sync or async nodes, and in each node a random mix of tool calls, failing tool calls, and clock, uuid and rng reads, with random delays so branches finish in a different order each run. For every graph it checks three properties:
+
+- a strict replay reproduces every call (same step, request and outcome) and the same output, with no tool body run;
+- a fork at a random step runs live exactly the calls after it (later calls in its task, and later layers), with every other call identical to the recording, and the fork replays strictly in turn;
+- a replay of a graph with one node's code edited goes live from that node's first changed request, and only downstream of it.
+
+The expected live calls come from the generated graph's layers, not from Ledger's own downstream rule.
+
+## Replay-fidelity benchmark
+
+`bench/replay_fidelity.py` records 200 runs of the 5-node pipeline against the nondeterministic fake server, then replays every one in a container with `network_mode: none`. A replay counts as identical only if it finishes with the same output, makes no live call (LLM, tool, clock, uuid or rng), finds no divergence, and logs the same calls as the recording, step for step: same request byte for byte, same outcome, each served from the log.
+
+The baseline is LangGraph's own checkpoint replay: the same pipeline compiled with a `SqliteSaver`, replayed from its first checkpoint with `graph.invoke(None, checkpoint_config)`. LangGraph re-executes every node after that checkpoint, so it calls the LLM and the tool again.
+
+| 200 recorded runs | Identical | Storage per run (KB, p50) | Replay time (ms, p50) |
+| --- | --- | --- | --- |
+| Ledger, network off | **200 / 200** | 9.3 | 4.1 |
+| LangGraph checkpoint replay, network off | 0 / 200 (connection error at the first call) | 6.2 | 1.2 |
+| LangGraph checkpoint replay, network on | 0 / 200 (new answers, different output) | 6.2 | 95.5 |
+
+Measured in Docker on an Apple-silicon Mac; full per-run results are in `bench/results/replay_fidelity.json`. Ledger stores about 3 KB more per run than LangGraph's checkpoints because it keeps every request and response, not just the state between steps. Reading back the final checkpoint would reproduce the output, but that runs nothing, so it isn't counted as a replay.
+
+```sh
+uv run python -m bench.replay_fidelity run          # one process: sockets blocked for the replay
+docker compose -f deploy/docker-compose.yml run --rm bench-record
+docker compose -f deploy/docker-compose.yml run --rm bench-replay   # no network; refuses if fakellm is reachable
+```
+
+Exit status is 0 only if every Ledger replay was identical.
+
 ## Clock, ids and randomness
 
 `ledger.time()`, `ledger.now()`, `ledger.uuid4()` and `ledger.rng()` read live values while recording and logged values while replaying; outside a session they behave like the stdlib. `ledger.rng()` logs one seed per task and returns a `random.Random`, so any number of draws costs one event. They are explicit calls, not patches of `time`, `uuid` and `random`, because LangGraph, httpx and the OpenAI client read the clock too, a varying number of times per run.
@@ -102,6 +138,8 @@ Requires [uv](https://docs.astral.sh/uv/) and Python 3.11 to 3.13.
 ```sh
 uv sync
 uv run pytest                                  # includes the replay gate with sockets blocked
+HYPOTHESIS_PROFILE=thorough uv run pytest tests/test_properties.py   # 1000 random graphs per property
+uv run python -m bench.replay_fidelity run       # the 200-run replay benchmark (about a minute)
 
 # Local: fake OpenAI-compatible server, record, stop server, replay
 uv run python -m ledger.testing.fake_llm --port 8787 &
@@ -125,6 +163,7 @@ docker compose -f deploy/docker-compose.yml run --rm replay
 | `ledger/cli.py` | The `ledger` command: `record`, `replay`, `fork`, `steps`, `runs` |
 | `ledger/testing/fake_llm.py` | Nondeterministic fake LLM and search server |
 | `examples/toy_pipeline.py` | 5-node pipeline with a 3-way parallel fan-out |
+| `bench/replay_fidelity.py` | Replay-fidelity benchmark against LangGraph checkpoint replay; results in `bench/results/` |
 | `deploy/` | Dockerfile and Compose file |
 
 Payloads are stored as canonical JSON inside protobuf events, because protobuf serialization is not canonical and would break content hashing.
