@@ -109,9 +109,10 @@ class StubClient:
         self.prompts = []
         self.chat = SimpleNamespace(completions=self)
 
-    def create(self, *, model, messages, temperature):
+    def create(self, *, model, messages, **options):
         prompt = messages[0]["content"]
         self.prompts.append(prompt)
+        self.options = options
         case = next(c for q, c in self.by_question.items() if f"Task: {q}\n" in prompt)
         step = case.mistake_step + (1 if case.id in self.wrong else 0)
         text = json.dumps({"agent": case.mistake_agent, "step": step, "reason": "r"})
@@ -126,6 +127,7 @@ def test_the_judge_reads_the_whole_log_and_is_scored(data):
     client = StubClient(cases, wrong={"hand-crafted/2"})
     judge = ww.Judge(client, "m", Pricing(1.0, 2.0), with_ground_truth=True, max_chars=20)
     s = ww.score(cases, ["judge"], judge)["judge"]
+    assert client.options == {}  # no temperature unless asked: reasoning models reject it
     assert (s["all"].agent, s["all"].step) == (3, 2)
     assert s["hand-crafted"].summary()["step_accuracy"]["rate"] == 0.0
     assert judge.spent == pytest.approx(3 * (1000 + 2 * 50) / 1e6)
@@ -202,3 +204,24 @@ def test_download_fetches_the_pinned_logs(tmp_path, monkeypatch):
     assert not any("parquet" in u for u in asked)
     with pytest.raises(FileExistsError):
         ww.download(root)
+
+
+def test_judge_options_are_sent_only_when_given():
+    from bench.blame_eval import judge_options
+
+    assert judge_options(None, None) == {}
+    assert judge_options(0.0, "high") == {"temperature": 0.0, "reasoning_effort": "high"}
+
+
+def test_a_failed_judge_call_counts_as_unanswered(data):
+    cases = ww.load(data)
+
+    class Flaky(StubClient):
+        def create(self, **kw):
+            if "Find the paper" in kw["messages"][0]["content"]:
+                raise TimeoutError("read timed out")
+            return super().create(**kw)
+
+    s = ww.score(cases, ["judge"], ww.Judge(Flaky(cases), "m"))["judge"]
+    assert s["all"].n == 3 and s["all"].unanswered == 1 and s["all"].step == 2
+    assert s["all"].by_case[2]["error"] == "TimeoutError: read timed out"

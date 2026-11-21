@@ -11,6 +11,7 @@ methods are compared.
     python -m bench.who_and_when stats
     python -m bench.who_and_when run [--methods random,judge] [--subset hand-crafted]
         [--judge-model M --judge-base-url URL --judge-price IN OUT]
+        [--judge-reasoning-effort E] [--judge-temperature T]
         [--with-ground-truth] [--limit N] [--max-dollars D]
 
 The data lives in ``bench/data/who_and_when/`` (gitignored), one JSON file
@@ -246,6 +247,9 @@ class Judge:
     pricing: Pricing | None = None
     with_ground_truth: bool = False
     max_chars: int | None = None
+    # Sent only when set: reasoning models reject a custom temperature.
+    temperature: float | None = None
+    reasoning_effort: str | None = None
     spent: float = 0.0
     tokens_in: int = 0
     tokens_out: int = 0
@@ -253,8 +257,11 @@ class Judge:
     def __call__(self, case: Case) -> tuple[str | None, int | None]:
         prompt = judge_prompt(case, with_ground_truth=self.with_ground_truth,
                               max_chars=self.max_chars)
+        from bench.blame_eval import judge_options
+
         resp = self.client.chat.completions.create(
-            model=self.model, temperature=0, messages=[{"role": "user", "content": prompt}],
+            model=self.model, messages=[{"role": "user", "content": prompt}],
+            **judge_options(self.temperature, self.reasoning_effort),
         )
         if resp.usage:
             self.tokens_in += resp.usage.prompt_tokens or 0
@@ -311,11 +318,17 @@ def score(cases: list[Case], methods: Iterable[str], judge: Judge | None = None,
                     raise ValueError("the judge method needs a judge")
                 if max_dollars is not None and judge.spent >= max_dollars:
                     break
-                agent, step = judge(case)
+                try:
+                    agent, step = judge(case)
+                    error = None
+                except Exception as exc:  # an API error: no answer, keep going
+                    agent, step, error = None, None, f"{type(exc).__name__}: {exc}"[:300]
                 a = float(agent == agent_key(case.mistake_agent))
                 s = float(step == case.mistake_step)
                 extra = {"agent": agent, "step": step, "truth": [case.mistake_agent,
                                                                 case.mistake_step]}
+                if error:
+                    extra["error"] = error
                 if agent is None and step is None:
                     for sc in (scores["all"], scores[case.subset]):
                         sc.unanswered += 1
@@ -375,6 +388,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--judge-base-url")
     run.add_argument("--judge-price", type=float, nargs=2, metavar=("IN", "OUT"),
                      help="judge dollars per million input and output tokens")
+    run.add_argument("--judge-temperature", type=float, help="left out unless given")
+    run.add_argument("--judge-reasoning-effort", help="e.g. low, medium, high")
     run.add_argument("--out", type=Path)
     args = p.parse_args(argv)
 
@@ -407,6 +422,8 @@ def main(argv: list[str] | None = None) -> int:
                 args.judge_model,
                 Pricing(*args.judge_price) if args.judge_price else None,
                 with_ground_truth=args.with_ground_truth, max_chars=args.max_chars,
+                temperature=args.judge_temperature,
+                reasoning_effort=args.judge_reasoning_effort,
             )
     started = time.monotonic()
     scores = score(cases, methods, judge, args.max_dollars)
@@ -419,6 +436,8 @@ def main(argv: list[str] | None = None) -> int:
         "with_ground_truth": args.with_ground_truth,
         "max_chars": args.max_chars,
         "judge": {"model": args.judge_model, "base_url": args.judge_base_url,
+                  "temperature": judge.temperature,
+                  "reasoning_effort": judge.reasoning_effort,
                   "dollars": round(judge.spent, 4), "tokens_in": judge.tokens_in,
                   "tokens_out": judge.tokens_out} if judge else None,
         "wall_s": round(time.monotonic() - started, 1),
