@@ -1,7 +1,7 @@
 """Replay-fidelity benchmark: the M1 gate.
 
 Records N runs (200 by default) of the 5-node pipeline in
-``examples/toy_pipeline.py`` against the nondeterministic fake LLM and search
+``ledger/examples/toy_pipeline.py`` against the nondeterministic fake LLM and search
 server, then replays every one with the network off and checks it call by
 call. The gate is 100% identical.
 
@@ -59,11 +59,11 @@ from pathlib import Path
 from typing import Any
 
 import ledger
-from examples import toy_pipeline as toy
+from ledger.examples import toy_pipeline as toy
 from ledger.core.events import body_kind, load_payload, pb
 from ledger.core.store import step_key
 
-GRAPH_REF = "examples.toy_pipeline:graph_from_env"
+GRAPH_REF = "ledger.examples.toy_pipeline:graph_from_env"
 RESULTS = Path(__file__).parent / "results"
 LEDGER_DB = "ledger.db"
 BASELINE_DB = "langgraph.db"
@@ -388,7 +388,7 @@ def report(
 ) -> dict[str, Any]:
     return {
         "benchmark": "replay_fidelity",
-        "workload": "examples/toy_pipeline.py: plan -> 3 parallel research branches -> write; "
+        "workload": "ledger/examples/toy_pipeline.py: plan -> 3 parallel research branches -> write; "
         "8 calls (5 LLM, 3 tool) plus rng, uuid and clock reads per run",
         "date": datetime.now(UTC).isoformat(timespec="seconds"),
         "platform": f"{platform.system()} {platform.machine()}, Python {platform.python_version()}",

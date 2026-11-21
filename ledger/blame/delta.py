@@ -68,7 +68,7 @@ that would run an effect live raises ``LiveEffectRefused`` unless
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from ledger.blame.budget import Budget, OutOfBudget, Pricing, Spend, usage, wilson
@@ -78,9 +78,13 @@ from ledger.effects import LiveEffectRefused
 from ledger.replay.engine import CALL_KINDS, RERUN, is_downstream
 from ledger.replay.fork import StepInfo, fork, steps
 
-__all__ = ["CANDIDATE_KINDS", "Counterfactual", "Diagnosis", "RunNotFailed", "diagnose"]
+__all__ = [
+    "CANDIDATE_KINDS", "Counterfactual", "DIAGNOSIS_SCHEMA", "Diagnosis", "RunNotFailed", "diagnose",
+]
 
 CANDIDATE_KINDS = ("llm_call", "tool_call", "nondet")
+# Names the shape of ``Diagnosis.to_dict()``; bump it when that changes.
+DIAGNOSIS_SCHEMA = "ledger.diagnosis/1"
 
 
 class RunNotFailed(ValueError):
@@ -161,6 +165,40 @@ class Diagnosis:
     @property
     def dollars(self) -> float:
         return self.spent.dollars
+
+    def to_dict(self) -> dict[str, Any]:
+        """The diagnosis as plain JSON-ready data (``ledger diagnose`` prints
+        it, the UI's blame view reads it)."""
+        return {
+            "schema": DIAGNOSIS_SCHEMA,
+            "run_id": self.run_id,
+            "status": self.status,
+            "complete": self.complete,
+            "step": asdict(self.step) if self.step is not None else None,
+            "steps": [asdict(s) for s in self.steps],
+            "narrowed": [asdict(s) for s in self.narrowed],
+            "candidates": self.candidates,
+            "counterfactuals": [
+                {
+                    "label": c.label,
+                    "reran": list(c.reran),
+                    "fixed": c.fixed,
+                    "passed": c.passed,
+                    "trials": c.trials,
+                    "repeats": c.repeats,
+                    "threshold": c.threshold,
+                    "rate": c.rate,
+                    "interval": list(c.interval),
+                    "run_ids": list(c.run_ids),
+                    "live_calls": c.live_calls,
+                    "tokens_in": c.tokens_in,
+                    "tokens_out": c.tokens_out,
+                    "dollars": c.dollars,
+                }
+                for c in self.counterfactuals
+            ],
+            "spent": asdict(self.spent),
+        }
 
     def __str__(self) -> str:
         found = ", ".join(s.key for s in self.steps) or "no step"

@@ -8,7 +8,7 @@ import pytest
 from langgraph.graph import END, START, StateGraph
 
 import ledger
-from examples import refund_agent
+from ledger.examples import refund_agent
 from ledger import cli
 from ledger.core.events import body_kind, pb
 from ledger.core.store import step_key
@@ -152,7 +152,7 @@ def test_cli_resumes_every_unfinished_run(fake_server, stripe_server, tmp_path, 
         for charge, n in zip(charges, (3, 5), strict=True):
             with crash_after(store, n):
                 with ledger.record(store) as rec:
-                    rec.graph_ref = "examples.refund_agent:graph_from_env"
+                    rec.graph_ref = "ledger.examples.refund_agent:graph_from_env"
                     graph.invoke(ticket(charge))
 
     assert cli.main(["--db", db, "resume", "--all"]) == 0

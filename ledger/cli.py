@@ -1,12 +1,13 @@
-"""The ``ledger`` command: record, replay, fork and resume runs of a LangGraph graph.
+"""The ``ledger`` command: record, replay, fork, resume and diagnose runs of a LangGraph graph.
 
-    ledger record -g examples.toy_pipeline:graph_from_env --input '{"topic": "fencing tokens"}'
+    ledger record -g ledger.examples.toy_pipeline:graph_from_env --input '{"topic": "fencing tokens"}'
     ledger runs
     ledger replay RUN_ID                      # strict; exit 1 unless identical
     ledger replay --all --live                # report divergences instead of failing
     ledger steps RUN_ID                       # the calls a fork can target
     ledger fork RUN_ID --edit 12='a different summary' --rerun 20
     ledger resume --all                       # finish runs that crashed or failed
+    ledger diagnose RUN_ID --check mod:passed # which step broke a failed run (JSON)
 
 ``-g/--graph`` names the graph as ``module:attr``: a compiled graph, or a
 function with no arguments that returns one. The current directory is on the
@@ -21,13 +22,16 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import inspect
 import json
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
+from ledger.blame import CANDIDATE_KINDS, Budget, Pricing, RunNotFailed, diagnose
 from ledger.core.events import body_kind, load_payload, make_error, pb
+from ledger.effects import LiveEffectRefused
 from ledger.core.session import Session, record
 from ledger.core.store import EventStore
 from ledger.intercept.langgraph import InstrumentedGraph, instrument
@@ -51,11 +55,11 @@ class CLIError(Exception):
 # Graphs
 
 
-def load_graph(ref: str) -> InstrumentedGraph:
-    """Import ``module:attr`` and return it as an instrumented graph."""
+def _import_ref(ref: str, flag: str) -> Any:
+    """The object ``module:attr`` names."""
     module_name, sep, attr = ref.partition(":")
     if not sep or not module_name or not attr:
-        raise CLIError(f"--graph wants module:attr, not {ref!r}")
+        raise CLIError(f"{flag} wants module:attr, not {ref!r}")
     if "" not in sys.path:
         sys.path.insert(0, "")
     try:
@@ -67,11 +71,41 @@ def load_graph(ref: str) -> InstrumentedGraph:
             obj = getattr(obj, part)
         except AttributeError:
             raise CLIError(f"{module_name!r} has no attribute {attr!r}") from None
+    return obj
+
+
+def load_graph(ref: str) -> InstrumentedGraph:
+    """Import ``module:attr`` and return it as an instrumented graph."""
+    obj = _import_ref(ref, "--graph")
     if not hasattr(obj, "invoke") and callable(obj):
         obj = obj()
     if not hasattr(obj, "invoke"):
         raise CLIError(f"{ref} is not a graph or a function that returns one")
     return instrument(obj)
+
+
+def load_check(ref: str) -> Callable[[Any, Any], bool]:
+    """Import the ``module:attr`` success check of ``ledger diagnose``.
+
+    It takes the run's output, or its output and input (for checks that need
+    the input to know the right answer), and returns whether the run passed.
+    """
+    fn = _import_ref(ref, "--check")
+    if not callable(fn):
+        raise CLIError(f"{ref} is not a function")
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):  # a builtin without a signature: assume one arg
+        return lambda output, graph_input: bool(fn(output))
+    for n in (2, 1):
+        try:
+            sig.bind(*([None] * n))
+        except TypeError:
+            continue
+        if n == 2:
+            return lambda output, graph_input: bool(fn(output, graph_input))
+        return lambda output, graph_input: bool(fn(output))
+    raise CLIError(f"--check {ref} must take (output) or (output, input)")
 
 
 def _graph_for(args: argparse.Namespace, store: EventStore, source_run_id: str) -> tuple[str, Any]:
@@ -334,6 +368,66 @@ def cmd_fork(args: argparse.Namespace, store: EventStore) -> int:
     return 0
 
 
+def cmd_diagnose(args: argparse.Namespace, store: EventStore) -> int:
+    check_ref = args.check or os.environ.get("LEDGER_CHECK", "")
+    if not check_ref:
+        raise CLIError("diagnose needs --check module:attr (or $LEDGER_CHECK)")
+    check = load_check(check_ref)
+    if args.repeats < 1:
+        raise CLIError("--repeats must be at least 1")
+    if not 0 <= args.threshold < 1:
+        raise CLIError("--threshold must be in [0, 1)")
+    if args.max_dollars is not None and args.price is None:
+        raise CLIError("--max-dollars needs --price IN OUT (dollars per million tokens)")
+    budget = None
+    if any(v is not None for v in (args.max_forks, args.max_live_calls, args.max_dollars)):
+        budget = Budget(forks=args.max_forks, live_calls=args.max_live_calls,
+                        dollars=args.max_dollars)
+    pricing = Pricing(*args.price) if args.price is not None else None
+    kinds = tuple(args.kind) if args.kind else CANDIDATE_KINDS
+
+    ref, graph = _graph_for(args, store, args.run_id)
+    graph_input = _input_of(store, args.run_id)
+    try:
+        d = diagnose(
+            args.run_id, graph, lambda output: check(output, graph_input), store=store,
+            kinds=kinds, repeats=args.repeats, threshold=args.threshold,
+            budget=budget, pricing=pricing, live_effects=args.live_effects,
+        )
+    except RunNotFailed as exc:
+        raise CLIError(str(exc)) from None
+    except LiveEffectRefused as exc:
+        raise CLIError(
+            f"a counterfactual would run an effect live ({exc}); pass --live-effects "
+            "only if repeating it is safe (a test account, a fake server)"
+        ) from None
+
+    report = d.to_dict()
+    report["graph"] = ref
+    report["check"] = check_ref
+    report["settings"] = {
+        "kinds": list(kinds), "repeats": args.repeats, "threshold": args.threshold,
+        "budget": None if budget is None else {
+            "forks": budget.forks, "live_calls": budget.live_calls, "dollars": budget.dollars,
+        },
+        "pricing": None if pricing is None else {
+            "input_per_mtok": pricing.input_per_mtok, "output_per_mtok": pricing.output_per_mtok,
+        },
+    }
+    text = json.dumps(report, indent=2, ensure_ascii=False)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as f:
+            f.write(text + "\n")
+    else:
+        print(text)
+    # The JSON is for programs; a one-line verdict goes to stderr for people.
+    verdict = f"{d.status}: " + (", ".join(f"#{s.index} {s.key}" for s in d.steps) or "no step")
+    if d.status == "budget" and d.narrowed:
+        verdict += f" (narrowed to {len(d.narrowed)} candidates)"
+    print(f"{verdict}  forks={d.forks} live={d.live_calls} ${d.dollars:.4f}", file=sys.stderr)
+    return 0 if d.complete else 1
+
+
 def cmd_steps(args: argparse.Namespace, store: EventStore) -> int:
     _run_started(store, args.run_id)  # a clear error for an unknown run
     for s in steps(args.run_id, store):
@@ -398,7 +492,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = argparse.ArgumentParser(
         prog="ledger",
-        description="Record, replay, fork and resume LangGraph runs.",
+        description="Record, replay, fork, resume and diagnose LangGraph runs.",
     )
     p.add_argument("--db", default=None, help=db_help)
     sub = p.add_subparsers(dest="cmd", required=True, metavar="COMMAND")
@@ -447,6 +541,44 @@ def build_parser() -> argparse.ArgumentParser:
     rm.add_argument("run_ids", nargs="*", metavar="RUN_ID")
     rm.add_argument("--all", action="store_true", help="resume every recording that didn't finish cleanly")
     rm.set_defaults(func=cmd_resume)
+
+    dg = sub.add_parser(
+        "diagnose", parents=[common, graph],
+        help="find the step that broke a failed run; print the diagnosis as JSON",
+        description="Bisects over forks of the run in which chosen calls rerun live, "
+        "and prints the diagnosis as JSON (to stdout or --out) and a one-line verdict "
+        "to stderr. Exit 0 if it found the step(s), 1 if not (no step, out of budget, "
+        "inconsistent), 2 on an error such as a run that passes its check.",
+    )
+    dg.add_argument("run_id", metavar="RUN_ID")
+    dg.add_argument(
+        "-c", "--check", default=None, metavar="MODULE:ATTR",
+        help="function of the output, or of (output, input), true when a run "
+        "succeeds (default: $LEDGER_CHECK)",
+    )
+    dg.add_argument("-o", "--out", default=None, metavar="FILE", help="write the JSON here")
+    dg.add_argument(
+        "--kind", action="append", choices=CANDIDATE_KINDS, default=[],
+        help="call kinds that can be blamed (repeatable; default: all of them)",
+    )
+    dg.add_argument("--repeats", type=int, default=1, help="runs per counterfactual (default 1)")
+    dg.add_argument(
+        "--threshold", type=float, default=0.5,
+        help="a counterfactual fixes the run when more than this share of its "
+        "repeats pass (default 0.5; 0 means any pass)",
+    )
+    dg.add_argument("--max-forks", type=int, default=None, help="stop after this many forks")
+    dg.add_argument("--max-live-calls", type=int, default=None, help="stop after this many live calls")
+    dg.add_argument("--max-dollars", type=float, default=None, help="stop after spending this much")
+    dg.add_argument(
+        "--price", type=float, nargs=2, default=None, metavar=("IN", "OUT"),
+        help="dollars per million input and output tokens, to count spend",
+    )
+    dg.add_argument(
+        "--live-effects", action="store_true",
+        help="let counterfactuals run effects live (only against test accounts)",
+    )
+    dg.set_defaults(func=cmd_diagnose)
 
     st = sub.add_parser("steps", parents=[common], help="list a run's calls")
     st.add_argument("run_id", metavar="RUN_ID")

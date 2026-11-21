@@ -39,7 +39,7 @@ services:
 
   record:
     <<: *worker
-    command: ["python", "-m", "examples.toy_pipeline", "record", "--runs", "5"]
+    command: ["python", "-m", "ledger.examples.toy_pipeline", "record", "--runs", "5"]
     depends_on:
       fakellm:
         condition: service_healthy
@@ -48,7 +48,7 @@ services:
   replay:
     <<: *worker
     network_mode: none
-    command: ["ledger", "replay", "--all", "-g", "examples.toy_pipeline:graph_from_env"]
+    command: ["ledger", "replay", "--all", "-g", "ledger.examples.toy_pipeline:graph_from_env"]
     profiles: ["jobs"]
 
   # Replay-fidelity benchmark (bench/replay_fidelity.py), in two phases so

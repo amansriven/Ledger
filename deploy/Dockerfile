@@ -9,7 +9,6 @@ COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --group bench --group examples --no-install-project
 
 COPY ledger ledger
-COPY examples examples
 COPY bench bench
 COPY chaos/*.py chaos/
 RUN uv sync --frozen --no-dev --group bench --group examples

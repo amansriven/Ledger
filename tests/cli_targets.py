@@ -39,3 +39,16 @@ not_a_graph = 42
 
 def make():
     return _build()
+
+
+# Success checks for `ledger diagnose`.
+def positive(out) -> bool:
+    return out["x"] > 0
+
+
+def one_more(out, graph_input) -> bool:
+    return out["x"] == graph_input["x"] + 1
+
+
+def too_many_args(a, b, c) -> bool:
+    return True

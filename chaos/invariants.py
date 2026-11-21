@@ -27,7 +27,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from examples.refund_agent import AUTO_REFUND_LIMIT
+from ledger.examples.refund_agent import AUTO_REFUND_LIMIT
 
 REFUND = "stripe.refunds.create"
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ledger
-from examples.toy_pipeline import recorded_runs
+from ledger.examples.toy_pipeline import recorded_runs
 from ledger.core.events import body_kind, load_payload
 
 N_RUNS = 10
