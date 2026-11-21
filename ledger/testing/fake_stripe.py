@@ -20,8 +20,9 @@ Test hooks, outside Stripe's API:
     POST /_faults                {"path": "/v1/refunds", "mode": ..., "count": 1}
     GET  /_state                 every charge, refund and request count
 
-Fault modes: ``drop_before`` closes the connection without applying the
-request; ``drop_after`` applies it, then closes the connection without an
+A fault's path may end in ``*`` to match every path with that prefix
+(``/v1/charges/*``). Fault modes: ``drop_before`` closes the connection
+without applying the request; ``drop_after`` applies it, then closes the connection without an
 answer (the case that leaves a caller in doubt); ``error_500`` answers 500
 without applying it.
 
@@ -181,6 +182,7 @@ class FakeStripeServer(ThreadingHTTPServer):
                 "charges": [dict(c) for c in self.charges.values()],
                 "refunds": [dict(r) for r in self.refunds.values()],
                 "requests": dict(self._counts),
+                "faults_pending": sum(f["count"] for f in self._faults),
             }
 
     def charge(self, charge_id: str) -> dict[str, Any]:
@@ -196,7 +198,9 @@ class FakeStripeServer(ThreadingHTTPServer):
 
     def _fault(self, path: str) -> str:
         for fault in self._faults:
-            if fault["path"] == path and fault["count"] > 0:
+            target = fault["path"]
+            hit = path.startswith(target[:-1]) if target.endswith("*") else path == target
+            if hit and fault["count"] > 0:
                 fault["count"] -= 1
                 return fault["mode"]
         return ""
