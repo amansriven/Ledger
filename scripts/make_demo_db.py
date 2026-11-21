@@ -6,6 +6,7 @@ Everything runs against the fake LLM, tool and Stripe servers in
 ``ledger.testing``, so it needs no network and no keys. The store holds:
 
 - 3 recordings of the toy pipeline, and a strict replay of the first
+- a toy recording with a ~6 KB topic, so some payloads live in the blob store
 - a fork of the first with one research summary edited
 - a toy run whose research_web reply was corrupted, and a saved diagnosis
   naming that call (plus the forks the diagnosis ran)
@@ -89,6 +90,13 @@ def build(path: Path, latency_ms: tuple[int, int] = (20, 120)) -> None:
             recorded.append(rec.run_id)
             print(f"recorded  {rec.run_id}  toy: {topic}")
 
+        # A long topic: its input and LLM requests go to the blob store.
+        long_topic = "how fencing tokens stop a paused leader from writing; " * 110
+        with ledger.record(store) as rec:
+            rec.graph_ref = TOY_REF
+            toy.invoke({"topic": long_topic})
+        print(f"recorded  {rec.run_id}  toy: a {len(long_topic)}-character topic (payloads in blobs)")
+
         first = recorded[0]
         with ledger.replay(first, store) as rep:
             rep.graph_ref = TOY_REF
@@ -137,7 +145,10 @@ def build(path: Path, latency_ms: tuple[int, int] = (20, 120)) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--out", default="demo.db", help="store to (re)create (default demo.db)")
-    build(Path(p.parse_args().out))
+    p.add_argument("--latency-ms", type=int, nargs=2, default=(20, 120), metavar=("LO", "HI"),
+                   help="fake LLM latency range, which spreads the timeline (default 20 120)")
+    args = p.parse_args()
+    build(Path(args.out), latency_ms=tuple(args.latency_ms))
 
 
 if __name__ == "__main__":
