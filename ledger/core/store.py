@@ -14,12 +14,15 @@ at a missing blob. ``events()`` fills the payloads back in.
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from ledger.core.blobs import BlobStore
 from ledger.core.events import body_kind, pb
@@ -47,6 +50,17 @@ CREATE TABLE IF NOT EXISTS events (
     data      BLOB    NOT NULL,
     PRIMARY KEY (run_id, idx)
 ) WITHOUT ROWID;
+
+-- Diagnoses saved by `ledger diagnose`, for the trace servers to show.
+-- data is the diagnosis as JSON (schema "ledger.diagnosis/1"); created_at
+-- is UTC ISO 8601 ("2026-11-21T12:00:00.000000Z").
+CREATE TABLE IF NOT EXISTS diagnoses (
+    id         INTEGER PRIMARY KEY,
+    run_id     TEXT    NOT NULL,
+    created_at TEXT    NOT NULL,
+    data       TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS diagnoses_run ON diagnoses (run_id, id);
 """
 
 
@@ -77,6 +91,18 @@ class RunStorage:
         return self.events + self.blobs
 
 
+class StoreNotFound(FileNotFoundError):
+    """A store opened read-only does not exist."""
+
+
+@dataclass(frozen=True)
+class StoredDiagnosis:
+    id: int
+    run_id: str
+    created_at: str  # UTC ISO 8601
+    data: dict[str, Any]
+
+
 class EventStore:
     """Thread-safe append-only log of run events.
 
@@ -89,30 +115,55 @@ class EventStore:
         path: str | os.PathLike[str] | None = None,
         *,
         blob_threshold: int | None = DEFAULT_BLOB_THRESHOLD,
+        read_only: bool = False,
     ) -> None:
         """Open (or create) the store at ``path``.
 
         ``blob_threshold`` is the payload size in bytes above which a payload
         is moved to the blob store; ``None`` keeps every payload inline. An
         in-memory store (``":memory:"``) always keeps payloads inline.
+
+        ``read_only`` opens an existing store without writing anything to it,
+        not even the schema (raises ``StoreNotFound`` if there is none), for
+        readers such as ``ledger ui``. Appends then fail.
         """
         if path is None:
             path = os.environ.get(DEFAULT_DB_ENV, DEFAULT_DB_PATH)
         self.path = Path(path)
+        self.read_only = read_only
         in_memory = str(self.path) == ":memory:"
-        if not in_memory:
+        if read_only and (in_memory or not self.path.is_file()):
+            raise StoreNotFound(f"no event store at {self.path}")
+        if not in_memory and not read_only:
             self.path.parent.mkdir(parents=True, exist_ok=True)
         self.blob_threshold = None if in_memory else blob_threshold
         self.blobs = BlobStore(self.path.with_name(self.path.name + ".blobs"))
         self._lock = threading.Lock()
-        self._conn = sqlite3.connect(
-            str(self.path), check_same_thread=False, isolation_level=None
-        )
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=FULL")
-        self._conn.execute("PRAGMA busy_timeout=5000")
-        self._conn.executescript(_SCHEMA)
+        if read_only:
+            self._conn = self.open_reader()
+        else:
+            self._conn = sqlite3.connect(
+                str(self.path), check_same_thread=False, isolation_level=None
+            )
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=FULL")
+            self._conn.execute("PRAGMA busy_timeout=5000")
+            self._conn.executescript(_SCHEMA)
         self._next_idx: dict[str, int] = {}
+
+    def open_reader(self) -> sqlite3.Connection:
+        """A new read-only connection to this store's database.
+
+        It sees every commit as soon as it lands, and ``PRAGMA data_version``
+        on it changes whenever another connection commits, so a watcher can
+        poll that cheaply and query only when something was written.
+        """
+        conn = sqlite3.connect(
+            f"{self.path.resolve().as_uri()}?mode=ro",
+            uri=True, check_same_thread=False, isolation_level=None,
+        )
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
 
     def _large(self, event: pb.Event) -> list[pb.Payload]:
         if self.blob_threshold is None:
@@ -234,6 +285,34 @@ class EventStore:
                 (prefix, prefix + "\U0010ffff"),
             ).fetchall()
         return [r for (r,) in rows]
+
+    def save_diagnosis(self, run_id: str, report: dict[str, Any]) -> int:
+        """Save a diagnosis of ``run_id`` (``Diagnosis.to_dict()``, plus
+        anything else worth keeping) and return its id."""
+        created = datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        data = json.dumps(report, ensure_ascii=False)
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO diagnoses (run_id, created_at, data) VALUES (?, ?, ?)",
+                (run_id, created, data),
+            )
+            return int(cur.lastrowid or 0)
+
+    def diagnoses(self, run_id: str) -> list[StoredDiagnosis]:
+        """The diagnoses saved for ``run_id``, oldest first."""
+        with self._lock:
+            try:
+                rows = self._conn.execute(
+                    "SELECT id, created_at, data FROM diagnoses WHERE run_id = ? ORDER BY id",
+                    (run_id,),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                # A store from before diagnoses were saved, opened read-only
+                # (so the table was not created).
+                if not self.read_only:
+                    raise
+                rows = []
+        return [StoredDiagnosis(i, run_id, c, json.loads(d)) for i, c, d in rows]
 
     def close(self) -> None:
         with self._lock:

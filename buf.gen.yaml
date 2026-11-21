@@ -1,0 +1,18 @@
+# Go (server/) and TypeScript (ui/) code from proto/. Run scripts/gen_proto.sh,
+# which also regenerates the Python code. Generated files are committed.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package
+      value: github.com/amansriven/Ledger/server/gen/ledgerv1
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.36.6
+    out: server/gen/ledgerv1
+    opt: paths=source_relative
+  - remote: buf.build/connectrpc/go:v1.18.1
+    out: server/gen/ledgerv1
+    opt: paths=source_relative
+  - remote: buf.build/bufbuild/es:v2.2.5
+    out: ui/src/lib/gen
+    opt: target=ts

@@ -8,6 +8,7 @@
     ledger fork RUN_ID --edit 12='a different summary' --rerun 20
     ledger resume --all                       # finish runs that crashed or failed
     ledger diagnose RUN_ID --check mod:passed # which step broke a failed run (JSON)
+    ledger ui --open                          # browse runs, diffs and blame
 
 ``-g/--graph`` names the graph as ``module:attr``: a compiled graph, or a
 function with no arguments that returns one. The current directory is on the
@@ -33,7 +34,7 @@ from ledger.blame import CANDIDATE_KINDS, Budget, Pricing, RunNotFailed, diagnos
 from ledger.core.events import body_kind, load_payload, make_error, pb
 from ledger.effects import LiveEffectRefused
 from ledger.core.session import Session, record
-from ledger.core.store import EventStore
+from ledger.core.store import EventStore, StoreNotFound
 from ledger.intercept.langgraph import InstrumentedGraph, instrument
 from ledger.replay.engine import RERUN, ReplayDivergence, ReplayMismatch, replay
 from ledger.replay.fork import fork, steps
@@ -414,6 +415,7 @@ def cmd_diagnose(args: argparse.Namespace, store: EventStore) -> int:
             "input_per_mtok": pricing.input_per_mtok, "output_per_mtok": pricing.output_per_mtok,
         },
     }
+    saved = "" if args.no_save else f"  saved=#{store.save_diagnosis(args.run_id, report)}"
     text = json.dumps(report, indent=2, ensure_ascii=False)
     if args.out:
         with open(args.out, "w", encoding="utf-8") as f:
@@ -424,7 +426,7 @@ def cmd_diagnose(args: argparse.Namespace, store: EventStore) -> int:
     verdict = f"{d.status}: " + (", ".join(f"#{s.index} {s.key}" for s in d.steps) or "no step")
     if d.status == "budget" and d.narrowed:
         verdict += f" (narrowed to {len(d.narrowed)} candidates)"
-    print(f"{verdict}  forks={d.forks} live={d.live_calls} ${d.dollars:.4f}", file=sys.stderr)
+    print(f"{verdict}  forks={d.forks} live={d.live_calls} ${d.dollars:.4f}{saved}", file=sys.stderr)
     return 0 if d.complete else 1
 
 
@@ -435,6 +437,27 @@ def cmd_steps(args: argparse.Namespace, store: EventStore) -> int:
             continue
         mark = "" if not s.from_log else "  (from log)"
         print(f"{s}{mark}")
+    return 0
+
+
+def cmd_ui(args: argparse.Namespace, store: EventStore) -> int:
+    from ledger.ui.server import TraceServer
+
+    try:
+        server = TraceServer(store, args.host, args.port, verbose=args.verbose)
+    except OSError as exc:
+        raise CLIError(f"cannot listen on {args.host}:{args.port}: {exc.strerror or exc}") from None
+    print(f"Ledger UI on {server.url}  (store: {store.path}, read-only; Ctrl-C to stop)", flush=True)
+    if args.open:
+        import webbrowser
+
+        webbrowser.open(server.url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.stop()
     return 0
 
 
@@ -547,7 +570,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="find the step that broke a failed run; print the diagnosis as JSON",
         description="Bisects over forks of the run in which chosen calls rerun live, "
         "and prints the diagnosis as JSON (to stdout or --out) and a one-line verdict "
-        "to stderr. Exit 0 if it found the step(s), 1 if not (no step, out of budget, "
+        "to stderr. The diagnosis is also saved in the store unless --no-save. Exit 0 if it found the step(s), 1 if not (no step, out of budget, "
         "inconsistent), 2 on an error such as a run that passes its check.",
     )
     dg.add_argument("run_id", metavar="RUN_ID")
@@ -557,6 +580,10 @@ def build_parser() -> argparse.ArgumentParser:
         "succeeds (default: $LEDGER_CHECK)",
     )
     dg.add_argument("-o", "--out", default=None, metavar="FILE", help="write the JSON here")
+    dg.add_argument(
+        "--no-save", action="store_true",
+        help="don't save the diagnosis in the store (where `ledger ui` shows it)",
+    )
     dg.add_argument(
         "--kind", action="append", choices=CANDIDATE_KINDS, default=[],
         help="call kinds that can be blamed (repeatable; default: all of them)",
@@ -588,6 +615,17 @@ def build_parser() -> argparse.ArgumentParser:
     rs = sub.add_parser("runs", parents=[common], help="list the runs in the store")
     rs.add_argument("--mode", choices=sorted(set(MODES.values())), help="only runs of this mode")
     rs.set_defaults(func=cmd_runs)
+
+    ui = sub.add_parser(
+        "ui", parents=[common], help="serve the trace UI and its API over the store (read-only)",
+        description="Serves the ledger.v1.TraceService API (Connect, JSON) and the built "
+        "trace UI. Only reads the store, so it can run beside a process that is recording.",
+    )
+    ui.add_argument("--host", default="127.0.0.1", help="address to listen on (default 127.0.0.1)")
+    ui.add_argument("--port", type=int, default=8700, help="port to listen on (default 8700; 0 picks one)")
+    ui.add_argument("--open", action="store_true", help="open the UI in a browser")
+    ui.add_argument("-v", "--verbose", action="store_true", help="log every request")
+    ui.set_defaults(func=cmd_ui, read_only=True)
     return p
 
 
@@ -595,8 +633,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        with EventStore(args.db) as store:
+        with EventStore(args.db, read_only=getattr(args, "read_only", False)) as store:
             return args.func(args, store)
+    except StoreNotFound as exc:
+        print(f"ledger {args.cmd}: {exc}", file=sys.stderr)
+        return 2
     except CLIError as exc:
         print(f"ledger {args.cmd}: {exc}", file=sys.stderr)
         return 2

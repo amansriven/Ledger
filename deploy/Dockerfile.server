@@ -1,0 +1,47 @@
+# The hosted read-only trace UI: ledger-server with the UI embedded, serving
+# a demo store built at image build time. From the repo root:
+#
+#   docker build -f deploy/Dockerfile.server -t ledger-trace .      (or: make image)
+#   docker run --rm -p 8700:8700 ledger-trace
+#
+# To serve your own store instead, mount it and point --db at it:
+#
+#   docker run --rm -p 8700:8700 -v "$PWD:/data" ledger-trace --db /data/ledger.db --addr 0.0.0.0:8700
+
+# The UI.
+FROM node:24-slim AS ui
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json ui/.npmrc ./
+RUN npm ci
+COPY ui/ ./
+RUN npm run build
+
+# The demo store, recorded against the fake LLM, tool and Stripe servers.
+FROM python:3.12-slim AS demo
+COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /bin/uv
+WORKDIR /app
+ENV UV_LINK_MODE=copy
+COPY pyproject.toml uv.lock README.md LICENSE ./
+RUN uv sync --frozen --no-dev --group examples --no-install-project
+COPY ledger ledger
+COPY scripts/make_demo_db.py scripts/
+RUN uv sync --frozen --no-dev --group examples \
+ && mkdir /demo \
+ && uv run --no-sync python scripts/make_demo_db.py --out /demo/demo.db
+
+# The server, with the UI embedded. Pure Go (modernc sqlite), so no cgo.
+FROM golang:1.27 AS server
+WORKDIR /src
+COPY server/go.mod server/go.sum ./
+RUN go mod download
+COPY server/ ./
+COPY --from=ui /ui/build/ webui/dist/
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /ledger-server ./cmd/ledger-server
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=server /ledger-server /ledger-server
+COPY --from=demo --chown=nonroot:nonroot /demo /data
+EXPOSE 8700
+ENTRYPOINT ["/ledger-server"]
+# --immutable: the demo store never changes, and /data needs no -shm file.
+CMD ["--db", "/data/demo.db", "--immutable", "--addr", "0.0.0.0:8700"]
