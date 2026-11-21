@@ -86,6 +86,7 @@ class _Completions:
         started = time.perf_counter_ns()
         try:
             resp = self._inner.create(**kwargs)
+            resp = session.live_outcome(step, "llm_call", resp)
         except Exception as exc:
             log_live(session, step, "llm_call", body, error=exc, started_ns=started)
             raise
@@ -111,6 +112,7 @@ class _Completions:
         started = time.perf_counter_ns()
         try:
             resp = await self._inner.create(**kwargs)
+            resp = session.live_outcome(step, "llm_call", resp)
         except Exception as exc:
             log_live(session, step, "llm_call", body, error=exc, started_ns=started)
             raise

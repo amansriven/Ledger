@@ -49,7 +49,7 @@ def _read(session: Session, source: str, live: Callable[[], Any]) -> Any:
         out = answer_from_log(session, step, "nondet", None, lambda v: v, match_key=source)
         if out is not GO_LIVE:
             return out
-    value = live()
+    value = session.live_outcome(step, "nondet", live())
     ev = new_event(step)
     ev.nondet.CopyFrom(pb.Nondet(source=source, value=make_payload(value)))
     session.append(ev)
