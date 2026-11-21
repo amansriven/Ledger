@@ -19,11 +19,15 @@ decisive step in Who&When's sense, the earliest step whose correction turns
 the failure into a success.
 
 With a single bad step f, rerunning from k fixes the run for every k up to f
-and for none after it, so a binary search over the log finds f. It takes one
-fork to check that rerunning everything fixes the run, about log2(n) to find
-f among n calls, and one more to check that rerunning f alone (with what
-depends on it) is enough. The recording itself is the "rerun nothing" end
-and costs nothing.
+and for none after it, so f can be searched for. The search gallops back from
+the end, rerunning the last call, then the last 2, 4, 8 and so on, until a
+rerun fixes the run, then bisects inside the last gap. Live calls are what a
+counterfactual costs, and the first forks rerun only the end of the run, so
+a step d calls from the end takes about 2 log2(d) forks, none of them
+rerunning much more than 2d calls. One more fork checks that rerunning f
+alone (with what depends on it) is enough, unless every call after f depends
+on f, in which case the fork that found f already did. Rerunning everything is only
+tried when nothing shorter fixes the run.
 
 **Several bad steps.** If rerunning the first step found alone doesn't fix
 the run, another step is needed too: the search goes on over the steps after
@@ -36,8 +40,25 @@ blame: the cause is in the code or the input, or the failure comes back
 whenever its step is redrawn (a model that makes the same mistake every
 time). ``diagnosis.step`` is then None.
 
-Each counterfactual runs ``repeats`` times and counts as a fix when more
-than half of them pass.
+**Noise.** Each counterfactual runs up to ``repeats`` times and counts as a
+fix when more than ``threshold`` of them pass. It stops early once that is
+settled, so a fork that passes or fails every time costs about half of
+``repeats`` with the default threshold of 0.5 (a majority vote). Each
+reports its pass rate with a Wilson interval.
+
+The right threshold depends on where the noise is. A majority vote suits
+runs that sometimes pass even with the fault kept. When they essentially
+never do, and noise only makes good runs fail (a flaky call later on, a
+model that repeats its mistake when redrawn), a real fix can pass less than
+half the time; then ``threshold=0``, one pass out of ``repeats``, is right,
+and stops at the first pass. Bisection
+assumes the answers are consistent; when noise makes them contradict each
+other the diagnosis ends ``"inconsistent"`` with the steps found so far.
+
+**Budget.** ``budget`` caps forks, live calls or dollars (see
+``ledger.blame.budget``). A diagnosis that runs out ends ``"budget"``: the
+steps found so far, and in ``narrowed`` the candidates the step being
+searched for must be among.
 
 Effects are not candidates: rerunning one would repeat it. A counterfactual
 that would run an effect live raises ``LiveEffectRefused`` unless
@@ -50,10 +71,11 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from ledger.blame.budget import Budget, OutOfBudget, Pricing, Spend, usage, wilson
 from ledger.core.events import body_kind, load_payload
-from ledger.core.store import EventStore
+from ledger.core.store import EventStore, step_key
 from ledger.effects import LiveEffectRefused
-from ledger.replay.engine import RERUN
+from ledger.replay.engine import CALL_KINDS, RERUN, is_downstream
 from ledger.replay.fork import StepInfo, fork, steps
 
 __all__ = ["CANDIDATE_KINDS", "Counterfactual", "Diagnosis", "RunNotFailed", "diagnose"]
@@ -78,10 +100,26 @@ class Counterfactual:
     run_ids: tuple[str, ...]
     # LLM and tool calls made live, over all trials.
     live_calls: int
+    # Runs it was allowed (``repeats``); ``trials`` can stop short of it.
+    repeats: int = 1
+    # It fixes the run when more than this share of ``repeats`` pass.
+    threshold: float = 0.5
+    tokens_in: int = 0
+    tokens_out: int = 0
+    dollars: float = 0.0
 
     @property
     def fixed(self) -> bool:
-        return 2 * self.passed > self.trials
+        return self.passed > self.threshold * self.repeats
+
+    @property
+    def rate(self) -> float:
+        return self.passed / self.trials if self.trials else 0.0
+
+    @property
+    def interval(self) -> tuple[float, float]:
+        """95% Wilson interval for the pass rate."""
+        return wilson(self.passed, self.trials)
 
 
 @dataclass
@@ -92,24 +130,42 @@ class Diagnosis:
     # How many recorded calls were candidates.
     candidates: int
     counterfactuals: list[Counterfactual] = field(default_factory=list)
-    # Whether rerunning ``steps`` alone was seen to fix the run.
-    complete: bool = False
+    # "found": rerunning ``steps`` alone fixed the run. "no_step": rerunning
+    # everything didn't. "budget": the budget ran out. "inconsistent": noisy
+    # forks contradicted each other. "" until the diagnosis ends.
+    status: str = ""
+    # With "budget": the candidates the step being searched for is among.
+    narrowed: list[StepInfo] = field(default_factory=list)
+    spent: Spend = field(default_factory=Spend)
+
+    @property
+    def complete(self) -> bool:
+        return self.status == "found"
 
     @property
     def step(self) -> StepInfo | None:
-        return self.steps[0] if self.steps else None
+        """The first step found or, if the budget ran out before any, the
+        first candidate it was narrowed to (a best guess)."""
+        if self.steps:
+            return self.steps[0]
+        return self.narrowed[0] if self.narrowed else None
 
     @property
     def forks(self) -> int:
-        return sum(c.trials for c in self.counterfactuals)
+        return self.spent.forks
 
     @property
     def live_calls(self) -> int:
-        return sum(c.live_calls for c in self.counterfactuals)
+        return self.spent.live_calls
+
+    @property
+    def dollars(self) -> float:
+        return self.spent.dollars
 
     def __str__(self) -> str:
         found = ", ".join(s.key for s in self.steps) or "no step"
-        return (f"{self.run_id}: {found} ({self.forks} forks, {self.live_calls} live calls, "
+        return (f"{self.run_id}: {self.status} {found} ({self.forks} forks, "
+                f"{self.live_calls} live calls, ${self.dollars:.4f}, "
                 f"{self.candidates} candidates)")
 
 
@@ -135,6 +191,9 @@ def diagnose(
     inputs: Any = None,
     kinds: Sequence[str] = CANDIDATE_KINDS,
     repeats: int = 1,
+    threshold: float = 0.5,
+    budget: Budget | None = None,
+    pricing: Pricing | None = None,
     live_effects: bool = False,
 ) -> Diagnosis:
     """Name the step(s) of the failed run ``run_id`` that caused the failure.
@@ -143,11 +202,17 @@ def diagnose(
     function of the input; it is run with the recording's input unless
     ``inputs`` is given. ``check(output)`` is true for a successful run; for
     the recording it gets the output as logged (JSON). ``kinds`` are the
-    call kinds that can be blamed. Raises RunNotFailed if the recording
-    passes ``check``.
+    call kinds that can be blamed. ``repeats``, ``threshold``, ``budget``
+    and ``pricing`` are described in the module docstring. Raises RunNotFailed if the
+    recording passes ``check``.
     """
     if repeats < 1:
         raise ValueError("repeats must be at least 1")
+    if not 0 <= threshold < 1:
+        raise ValueError("threshold must be in [0, 1)")
+    need = threshold * repeats  # passes must exceed this
+    if budget is not None and budget.dollars is not None and pricing is None:
+        raise ValueError("a dollar budget needs pricing")
     invoke = graph.invoke if hasattr(graph, "invoke") else graph
     owns_store = store is None
     store = store or EventStore()
@@ -160,11 +225,19 @@ def diagnose(
             raise RunNotFailed(f"run {run_id} passes its check: nothing to blame")
         diagnosis = Diagnosis(run_id, [], len(candidates))
         if not candidates:
+            diagnosis.status = "no_step"
             return diagnosis
+        spent = diagnosis.spent
 
         def counterfactual(reran: list[str], label: str) -> Counterfactual:
-            passed, run_ids, live = 0, [], 0
-            for _ in range(repeats):
+            passed, run_ids, live, t_in, t_out, cost = 0, [], 0, 0, 0, 0.0
+            for trial in range(repeats):
+                if passed > need or passed + (repeats - trial) <= need:
+                    break  # settled either way
+                if budget is not None and budget.exhausted(spent):
+                    if trial == 0:
+                        raise OutOfBudget
+                    break
                 with fork(
                     run_id, edits={k: RERUN for k in reran}, store=store,
                     on_divergence="live", live_effects=live_effects,
@@ -178,38 +251,83 @@ def diagnose(
                 passed += ok and bool(check(out))
                 run_ids.append(session.run_id)
                 live += session.stats.live_calls
-            c = Counterfactual(tuple(reran), label, passed, repeats, tuple(run_ids), live)
+                tin, tout = usage(store, session.run_id)
+                dollars = pricing.dollars(tin, tout) if pricing else 0.0
+                t_in, t_out, cost = t_in + tin, t_out + tout, cost + dollars
+                spent.forks += 1
+                spent.live_calls += session.stats.live_calls
+                spent.tokens_in += tin
+                spent.tokens_out += tout
+                spent.dollars += dollars
+            c = Counterfactual(
+                tuple(reran), label, passed, len(run_ids), tuple(run_ids), live,
+                repeats=repeats, threshold=threshold, tokens_in=t_in, tokens_out=t_out, dollars=cost,
+            )
             diagnosis.counterfactuals.append(c)
             return c
 
         keys = [s.key for s in candidates]
+        n = len(keys)
+        refs = {step_key(ev.step): ev.step for ev in store.events(run_id, hydrate=False)
+                if body_kind(ev) in CALL_KINDS}
+
+        def covered(found: list[int], lo: int) -> bool:
+            """Whether every candidate after ``lo`` depends on a found step, so
+            rerunning the found steps alone reruns what found + keys[lo:] did."""
+            return all(any(is_downstream(refs[keys[k]], refs[keys[g]]) for g in found)
+                       for k in range(lo + 1, n))
 
         def from_(i: int, forced: list[int]) -> bool:
             reran = [keys[j] for j in forced] + keys[i:]
             return counterfactual(reran, f"from {keys[i]}").fixed
 
-        if not from_(0, []):
-            return diagnosis
         found: list[int] = []
-        lo, n = 0, len(candidates)
-        # Invariant: rerunning found + keys[lo:] fixes the run; found + keys[hi:]
-        # doesn't (hi == n: the found steps alone, or the recording itself).
-        while True:
-            hi = n
-            while hi - lo > 1:
-                mid = (lo + hi) // 2
-                if from_(mid, found):
-                    lo = mid
-                else:
-                    hi = mid
-            found.append(lo)
-            reran = [keys[j] for j in found]
-            if counterfactual(reran, "only " + ", ".join(reran)).fixed:
-                diagnosis.complete = True
-                break
-            lo += 1
-            if lo >= n:
-                break  # contradicts an earlier fork: the runs are noisy
+        lo, hi = 0, n
+        searching = True  # between finding one step and checking it alone: False
+        try:
+            # Each round finds the last k >= lo with found + keys[k:] fixing
+            # the run; found + keys[n:] (the found steps alone, or in the
+            # first round the recording itself) is known not to. In later
+            # rounds found + keys[lo:] is known to fix it.
+            known = False
+            while True:
+                hi, width = n, 1
+                while True:  # gallop back from the end
+                    k = max(lo, n - width)
+                    if k == lo and known:
+                        break
+                    if from_(k, found):
+                        lo = k
+                        break
+                    hi = k
+                    if k == lo:
+                        diagnosis.status = "no_step"
+                        return diagnosis
+                    width *= 2
+                while hi - lo > 1:
+                    mid = (lo + hi) // 2
+                    if from_(mid, found):
+                        lo = mid
+                    else:
+                        hi = mid
+                found.append(lo)
+                searching = False
+                reran = [keys[j] for j in found]
+                # found + keys[lo:] is known to fix the run; if that reran
+                # nothing beyond what the found steps alone rerun, it was
+                # already this check.
+                if covered(found, lo) or counterfactual(reran, "only " + ", ".join(reran)).fixed:
+                    diagnosis.status = "found"
+                    break
+                lo += 1
+                searching, known = True, True
+                if lo >= n:
+                    diagnosis.status = "inconsistent"
+                    break
+        except OutOfBudget:
+            diagnosis.status = "budget"
+            if searching:
+                diagnosis.narrowed = candidates[lo:hi]
         diagnosis.steps = [candidates[j] for j in found]
         return diagnosis
     finally:
