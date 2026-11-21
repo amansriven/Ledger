@@ -1,0 +1,1786 @@
+{
+ "benchmark": "who_and_when",
+ "date": "2026-11-21T08:28:28+00:00",
+ "revision": "59b9fcba1aaed7bbf206b5f4d3c68b8face2f49c",
+ "cases": 184,
+ "with_ground_truth": false,
+ "max_chars": null,
+ "judge": {
+  "model": "gpt-6.2-sol",
+  "base_url": null,
+  "temperature": null,
+  "reasoning_effort": null,
+  "dollars": 3.0227,
+  "tokens_in": 1384312,
+  "tokens_out": 25406
+ },
+ "wall_s": 549.5,
+ "methods": {
+  "random": {
+   "all": {
+    "cases": 184,
+    "agent_accuracy": {
+     "rate": 0.3323,
+     "ci95": [
+      0.268,
+      0.402
+     ]
+    },
+    "step_accuracy": {
+     "rate": 0.0952,
+     "ci95": [
+      0.063,
+      0.149
+     ]
+    }
+   },
+   "algorithm-generated": {
+    "cases": 126,
+    "agent_accuracy": {
+     "rate": 0.291,
+     "ci95": [
+      0.221,
+      0.378
+     ]
+    },
+    "step_accuracy": {
+     "rate": 0.12,
+     "ci95": [
+      0.073,
+      0.187
+     ]
+    }
+   },
+   "hand-crafted": {
+    "cases": 58,
+    "agent_accuracy": {
+     "rate": 0.4221,
+     "ci95": [
+      0.296,
+      0.542
+     ]
+    },
+    "step_accuracy": {
+     "rate": 0.0416,
+     "ci95": [
+      0.01,
+      0.117
+     ]
+    }
+   }
+  },
+  "judge": {
+   "all": {
+    "cases": 184,
+    "agent_accuracy": {
+     "rate": 0.6033,
+     "ci95": [
+      0.531,
+      0.671
+     ]
+    },
+    "step_accuracy": {
+     "rate": 0.4293,
+     "ci95": [
+      0.36,
+      0.502
+     ]
+    }
+   },
+   "algorithm-generated": {
+    "cases": 126,
+    "agent_accuracy": {
+     "rate": 0.619,
+     "ci95": [
+      0.532,
+      0.699
+     ]
+    },
+    "step_accuracy": {
+     "rate": 0.4841,
+     "ci95": [
+      0.399,
+      0.571
+     ]
+    }
+   },
+   "hand-crafted": {
+    "cases": 58,
+    "agent_accuracy": {
+     "rate": 0.569,
+     "ci95": [
+      0.441,
+      0.688
+     ]
+    },
+    "step_accuracy": {
+     "rate": 0.3103,
+     "ci95": [
+      0.206,
+      0.438
+     ]
+    }
+   }
+  }
+ },
+ "answers": {
+  "judge": [
+   {
+    "id": "algorithm-generated/1",
+    "agent": "excelexpert",
+    "step": 0,
+    "truth": [
+     "Excel_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/2",
+    "agent": "verificationexpert",
+    "step": 2,
+    "truth": [
+     "Verification_Expert",
+     2
+    ]
+   },
+   {
+    "id": "algorithm-generated/3",
+    "agent": "statisticsexpert",
+    "step": 2,
+    "truth": [
+     "Verification_Expert",
+     4
+    ]
+   },
+   {
+    "id": "algorithm-generated/4",
+    "agent": "hawaiirealestateexpert",
+    "step": 2,
+    "truth": [
+     "HawaiiRealEstate_Expert",
+     2
+    ]
+   },
+   {
+    "id": "algorithm-generated/5",
+    "agent": "gamingawardsexpert",
+    "step": 1,
+    "truth": [
+     "DataVerification_Expert",
+     3
+    ]
+   },
+   {
+    "id": "algorithm-generated/6",
+    "agent": "literaryanalysisexpert",
+    "step": 1,
+    "truth": [
+     "Literary_Analysis_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/7",
+    "agent": "scientificpaperanalysisexpert",
+    "step": 1,
+    "truth": [
+     "ScientificPaperAnalysis_Expert",
+     5
+    ]
+   },
+   {
+    "id": "algorithm-generated/8",
+    "agent": "algorithmdesignexpert",
+    "step": 4,
+    "truth": [
+     "AlgorithmDesign_Expert",
+     4
+    ]
+   },
+   {
+    "id": "algorithm-generated/9",
+    "agent": "gametheoryexpert",
+    "step": 1,
+    "truth": [
+     "GameTheory_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/10",
+    "agent": "validationexpert",
+    "step": 0,
+    "truth": [
+     "Validation_Expert",
+     5
+    ]
+   },
+   {
+    "id": "algorithm-generated/11",
+    "agent": "dataanalysisexpert",
+    "step": 4,
+    "truth": [
+     "InformationVerification_Expert",
+     6
+    ]
+   },
+   {
+    "id": "algorithm-generated/12",
+    "agent": "verificationexpert",
+    "step": 1,
+    "truth": [
+     "Verification_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/13",
+    "agent": "arthistoryexpert",
+    "step": 5,
+    "truth": [
+     "ArtHistory_Expert",
+     4
+    ]
+   },
+   {
+    "id": "algorithm-generated/14",
+    "agent": "alikhanshowsandnewmexicancuisineexpert",
+    "step": 0,
+    "truth": [
+     "Culinary_Awards_Expert",
+     2
+    ]
+   },
+   {
+    "id": "algorithm-generated/15",
+    "agent": "boggleboardexpert",
+    "step": 4,
+    "truth": [
+     "Boggle_Board_Expert",
+     6
+    ]
+   },
+   {
+    "id": "algorithm-generated/16",
+    "agent": "narrationexpert",
+    "step": 1,
+    "truth": [
+     "Narration_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/17",
+    "agent": "verificationexpert",
+    "step": 1,
+    "truth": [
+     "Statistics_Expert",
+     4
+    ]
+   },
+   {
+    "id": "algorithm-generated/18",
+    "agent": "poetryexpert",
+    "step": 7,
+    "truth": [
+     "Poetry_Expert",
+     7
+    ]
+   },
+   {
+    "id": "algorithm-generated/19",
+    "agent": "debuggingproblemsolvingexpert",
+    "step": 0,
+    "truth": [
+     "Debugging_Problem_Solving_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/20",
+    "agent": "webservingexpert",
+    "step": 1,
+    "truth": [
+     "WebServing_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/21",
+    "agent": "musichistorianexpert",
+    "step": 1,
+    "truth": [
+     "Lyrics_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/22",
+    "agent": "pythondebuggingexpert",
+    "step": 0,
+    "truth": [
+     "PythonDebugging_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/23",
+    "agent": "arthistorianexpert",
+    "step": 1,
+    "truth": [
+     "Church_Historian_Expert",
+     3
+    ]
+   },
+   {
+    "id": "algorithm-generated/24",
+    "agent": "pythondebuggingexpert",
+    "step": 0,
+    "truth": [
+     "PythonDebugging_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/25",
+    "agent": "physicsexpert",
+    "step": 1,
+    "truth": [
+     "ModelEvaluation_Interpretation_Expert",
+     4
+    ]
+   },
+   {
+    "id": "algorithm-generated/26",
+    "agent": "womenincomputersciencehistoryexpert",
+    "step": 3,
+    "truth": [
+     "WomenInComputerScienceHistory_Expert",
+     3
+    ]
+   },
+   {
+    "id": "algorithm-generated/27",
+    "agent": "mariokart8deluxeexpert",
+    "step": 3,
+    "truth": [
+     "DataVerification_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/28",
+    "agent": "historianexpert",
+    "step": 7,
+    "truth": [
+     "DataVerification_Expert",
+     8
+    ]
+   },
+   {
+    "id": "algorithm-generated/29",
+    "agent": "webservingexpert",
+    "step": 3,
+    "truth": [
+     "WebServing_Expert",
+     3
+    ]
+   },
+   {
+    "id": "algorithm-generated/30",
+    "agent": "transcriptionverificationexpert",
+    "step": 2,
+    "truth": [
+     "Culinary_Expert",
+     3
+    ]
+   },
+   {
+    "id": "algorithm-generated/31",
+    "agent": "opencvexpert",
+    "step": 0,
+    "truth": [
+     "Verification_Expert",
+     3
+    ]
+   },
+   {
+    "id": "algorithm-generated/32",
+    "agent": "alligatorbiologyexpert",
+    "step": 5,
+    "truth": [
+     "SpeciesSightingsData_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/33",
+    "agent": "doiexpert",
+    "step": 3,
+    "truth": [
+     "InformationExtraction_Expert",
+     8
+    ]
+   },
+   {
+    "id": "algorithm-generated/34",
+    "agent": "locomotiveexpert",
+    "step": 4,
+    "truth": [
+     "Locomotive_Expert",
+     4
+    ]
+   },
+   {
+    "id": "algorithm-generated/35",
+    "agent": "webservingexpert",
+    "step": 3,
+    "truth": [
+     "WebServing_Expert",
+     8
+    ]
+   },
+   {
+    "id": "algorithm-generated/36",
+    "agent": "problemsolvingexpert",
+    "step": 2,
+    "truth": [
+     "ProblemSolving_Expert",
+     2
+    ]
+   },
+   {
+    "id": "algorithm-generated/37",
+    "agent": "cubingexpert",
+    "step": 1,
+    "truth": [
+     "Cubing_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/38",
+    "agent": "polishtvseriesexpert",
+    "step": 2,
+    "truth": [
+     "Polish_TV_Series_Expert",
+     2
+    ]
+   },
+   {
+    "id": "algorithm-generated/39",
+    "agent": "gisdataanalysisexpert",
+    "step": 1,
+    "truth": [
+     "GIS_DataAnalysis_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/40",
+    "agent": "numericalalgorithmsexpert",
+    "step": 1,
+    "truth": [
+     "Verification_Expert",
+     3
+    ]
+   },
+   {
+    "id": "algorithm-generated/41",
+    "agent": "tizingrammarexpert",
+    "step": 0,
+    "truth": [
+     "Tizin_Translation_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/42",
+    "agent": "verificationexpert",
+    "step": 1,
+    "truth": [
+     "Verification_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/43",
+    "agent": "dataanalysisexpert",
+    "step": 0,
+    "truth": [
+     "DataAnalysis_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/44",
+    "agent": "graphicdesignexpert",
+    "step": 9,
+    "truth": [
+     "WebDevelopment_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/45",
+    "agent": "dataanalysisexpert",
+    "step": 0,
+    "truth": [
+     "PublicationData_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/46",
+    "agent": "behavioralexpert",
+    "step": 1,
+    "truth": [
+     "Behavioral_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/47",
+    "agent": "mesopotamiannumbersystemsexpert",
+    "step": 1,
+    "truth": [
+     "Mesopotamian_Number_Systems_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/48",
+    "agent": "geometryexpert",
+    "step": 3,
+    "truth": [
+     "Geometry_Expert",
+     6
+    ]
+   },
+   {
+    "id": "algorithm-generated/49",
+    "agent": "dataextractionexpert",
+    "step": 4,
+    "truth": [
+     "Validation_Expert",
+     2
+    ]
+   },
+   {
+    "id": "algorithm-generated/50",
+    "agent": "financialexpert",
+    "step": 9,
+    "truth": [
+     "DataAnalysis_Expert",
+     3
+    ]
+   },
+   {
+    "id": "algorithm-generated/51",
+    "agent": "pythondebuggingexpert",
+    "step": 0,
+    "truth": [
+     "PythonDebugging_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/52",
+    "agent": "isbncheckdigitexpert",
+    "step": 0,
+    "truth": [
+     "ISBNCheckDigit_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/53",
+    "agent": "verificationexpert",
+    "step": 1,
+    "truth": [
+     "Verification_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/54",
+    "agent": "clinicaltrialdataanalysisexpert",
+    "step": 5,
+    "truth": [
+     "Clinical_Trial_Data_Analysis_Expert",
+     5
+    ]
+   },
+   {
+    "id": "algorithm-generated/55",
+    "agent": "webservingexpert",
+    "step": 6,
+    "truth": [
+     "WebServing_Expert",
+     5
+    ]
+   },
+   {
+    "id": "algorithm-generated/56",
+    "agent": "algorithmdesignexpert",
+    "step": 0,
+    "truth": [
+     "Validation_Expert",
+     5
+    ]
+   },
+   {
+    "id": "algorithm-generated/57",
+    "agent": "computerterminal",
+    "step": 1,
+    "truth": [
+     "TextExtraction_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/58",
+    "agent": "verificationexpert",
+    "step": 1,
+    "truth": [
+     "Verification_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/59",
+    "agent": "dataverificationexpert",
+    "step": 6,
+    "truth": [
+     "DataExtraction_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/60",
+    "agent": "realitytvhistorianexpert",
+    "step": 1,
+    "truth": [
+     "DataAnalysis_Expert",
+     3
+    ]
+   },
+   {
+    "id": "algorithm-generated/61",
+    "agent": "pythonprogrammingexpert",
+    "step": 2,
+    "truth": [
+     "PythonProgramming_Expert",
+     5
+    ]
+   },
+   {
+    "id": "algorithm-generated/62",
+    "agent": "literatureexpert",
+    "step": 3,
+    "truth": [
+     "Research_Expert",
+     2
+    ]
+   },
+   {
+    "id": "algorithm-generated/63",
+    "agent": "musictheoryexpert",
+    "step": 5,
+    "truth": [
+     "MusicTheory_Expert",
+     5
+    ]
+   },
+   {
+    "id": "algorithm-generated/64",
+    "agent": "whitneycollectionexpert",
+    "step": 3,
+    "truth": [
+     "MilitaryHistory_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/65",
+    "agent": "videocontentanalysisexpert",
+    "step": 3,
+    "truth": [
+     "VideoContentAnalysis_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/66",
+    "agent": "biblicalscholarexpert",
+    "step": 1,
+    "truth": [
+     "BiblicalScholar_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/67",
+    "agent": "videocontentanalysisexpert",
+    "step": 1,
+    "truth": [
+     "Verification_Expert",
+     4
+    ]
+   },
+   {
+    "id": "algorithm-generated/68",
+    "agent": "verificationexpert",
+    "step": 3,
+    "truth": [
+     "Verification_Expert",
+     3
+    ]
+   },
+   {
+    "id": "algorithm-generated/69",
+    "agent": "videocontentanalysisexpert",
+    "step": 7,
+    "truth": [
+     "VideoContentAnalysis_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/70",
+    "agent": "pythondebuggingexpert",
+    "step": 0,
+    "truth": [
+     "PythonDebugging_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/71",
+    "agent": "dataextractionexpert",
+    "step": 1,
+    "truth": [
+     "DataExtraction_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/72",
+    "agent": "apiexpert",
+    "step": 2,
+    "truth": [
+     "API_Expert",
+     8
+    ]
+   },
+   {
+    "id": "algorithm-generated/73",
+    "agent": "videoanalysisexpert",
+    "step": 1,
+    "truth": [
+     "VideoAnalysis_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/74",
+    "agent": "verificationexpert",
+    "step": 8,
+    "truth": [
+     "MerriamWebsterWordOfTheDay_Historian_Expert",
+     4
+    ]
+   },
+   {
+    "id": "algorithm-generated/75",
+    "agent": "datacollectionexpert",
+    "step": 1,
+    "truth": [
+     "Data_Collection_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/76",
+    "agent": "baseballexpert",
+    "step": 0,
+    "truth": [
+     "Validation_Expert",
+     5
+    ]
+   },
+   {
+    "id": "algorithm-generated/77",
+    "agent": "resultverificationexpert",
+    "step": 6,
+    "truth": [
+     "YouTubeDownload_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/78",
+    "agent": "literatureexpert",
+    "step": 7,
+    "truth": [
+     "Neurology_Expert",
+     9
+    ]
+   },
+   {
+    "id": "algorithm-generated/79",
+    "agent": "menuanalysisexpert",
+    "step": 3,
+    "truth": [
+     "WaybackMachine_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/80",
+    "agent": "pythondebuggingexpert",
+    "step": 0,
+    "truth": [
+     "PythonDebugging_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/81",
+    "agent": "dataverificationexpert",
+    "step": 5,
+    "truth": [
+     "DataVerification_Expert",
+     5
+    ]
+   },
+   {
+    "id": "algorithm-generated/82",
+    "agent": "celestialphysicsexpert",
+    "step": 1,
+    "truth": [
+     "Marathon_Expert",
+     4
+    ]
+   },
+   {
+    "id": "algorithm-generated/83",
+    "agent": "dataanalysisexpert",
+    "step": 1,
+    "truth": [
+     "DataAnalysis_Expert",
+     8
+    ]
+   },
+   {
+    "id": "algorithm-generated/84",
+    "agent": "chessexpert",
+    "step": 4,
+    "truth": [
+     "Chess_Expert",
+     7
+    ]
+   },
+   {
+    "id": "algorithm-generated/85",
+    "agent": "webservingexpert",
+    "step": 3,
+    "truth": [
+     "BenAndJerrysFlavors_Expert",
+     6
+    ]
+   },
+   {
+    "id": "algorithm-generated/86",
+    "agent": "librarydatabaseexpert",
+    "step": 0,
+    "truth": [
+     "Library_Database_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/87",
+    "agent": "musiccriticexpert",
+    "step": 1,
+    "truth": [
+     "Music_Critic_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/88",
+    "agent": "financialdataexpert",
+    "step": 0,
+    "truth": [
+     "FinancialData_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/89",
+    "agent": "validationexpert",
+    "step": 1,
+    "truth": [
+     "Validation_Expert",
+     8
+    ]
+   },
+   {
+    "id": "algorithm-generated/90",
+    "agent": "artexpert",
+    "step": 1,
+    "truth": [
+     "Federico_Lauria_Expert",
+     5
+    ]
+   },
+   {
+    "id": "algorithm-generated/91",
+    "agent": "dataanalysisexpert",
+    "step": 6,
+    "truth": [
+     "Blu-Ray_Expert",
+     8
+    ]
+   },
+   {
+    "id": "algorithm-generated/92",
+    "agent": "pythondebuggingexpert",
+    "step": 0,
+    "truth": [
+     "PythonDebugging_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/93",
+    "agent": "moviepropexpert",
+    "step": 2,
+    "truth": [
+     "FilmCritic_Expert",
+     4
+    ]
+   },
+   {
+    "id": "algorithm-generated/94",
+    "agent": "birdspeciesidentificationexpert",
+    "step": 6,
+    "truth": [
+     "AnimalBehavior_Expert",
+     8
+    ]
+   },
+   {
+    "id": "algorithm-generated/95",
+    "agent": "academicpublicationexpert",
+    "step": 5,
+    "truth": [
+     "AcademicPublication_Expert",
+     5
+    ]
+   },
+   {
+    "id": "algorithm-generated/96",
+    "agent": "dataretrievalexpert",
+    "step": 1,
+    "truth": [
+     "Data_Retrieval_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/97",
+    "agent": "wikipediahistoryexpert",
+    "step": 7,
+    "truth": [
+     "WikipediaHistory_Expert",
+     2
+    ]
+   },
+   {
+    "id": "algorithm-generated/98",
+    "agent": "probabilityexpert",
+    "step": 1,
+    "truth": [
+     "Probability_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/99",
+    "agent": "analyticalreasoningexpert",
+    "step": 1,
+    "truth": [
+     "Verification_Expert",
+     2
+    ]
+   },
+   {
+    "id": "algorithm-generated/100",
+    "agent": "movieexpert",
+    "step": 2,
+    "truth": [
+     "Movie_Expert",
+     2
+    ]
+   },
+   {
+    "id": "algorithm-generated/101",
+    "agent": "ticketspricingexpert",
+    "step": 2,
+    "truth": [
+     "Tickets_Pricing_Expert",
+     2
+    ]
+   },
+   {
+    "id": "algorithm-generated/102",
+    "agent": "filmographyexpert",
+    "step": 1,
+    "truth": [
+     "Filmography_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/103",
+    "agent": "dataverificationexpert",
+    "step": 3,
+    "truth": [
+     "DataVerification_Expert",
+     3
+    ]
+   },
+   {
+    "id": "algorithm-generated/104",
+    "agent": "pythondebuggingexpert",
+    "step": 0,
+    "truth": [
+     "PythonDebugging_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/105",
+    "agent": "localknowledgeexpert",
+    "step": 1,
+    "truth": [
+     "Verification_Expert",
+     6
+    ]
+   },
+   {
+    "id": "algorithm-generated/106",
+    "agent": "verificationexpert",
+    "step": 1,
+    "truth": [
+     "DataAnalysis_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/107",
+    "agent": "verificationexpert",
+    "step": 6,
+    "truth": [
+     "Verification_Expert",
+     6
+    ]
+   },
+   {
+    "id": "algorithm-generated/108",
+    "agent": "corporategovernanceexpert",
+    "step": 2,
+    "truth": [
+     "Corporate_Governance_Expert",
+     8
+    ]
+   },
+   {
+    "id": "algorithm-generated/109",
+    "agent": "verificationexpert",
+    "step": 1,
+    "truth": [
+     "Verification_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/110",
+    "agent": "verificationexpert",
+    "step": 5,
+    "truth": [
+     "Verification_Expert",
+     5
+    ]
+   },
+   {
+    "id": "algorithm-generated/111",
+    "agent": "dataanalysisexpert",
+    "step": 5,
+    "truth": [
+     "Verification_Expert",
+     8
+    ]
+   },
+   {
+    "id": "algorithm-generated/112",
+    "agent": "historicalweatherdataexpert",
+    "step": 4,
+    "truth": [
+     "HistoricalWeatherData_Expert",
+     4
+    ]
+   },
+   {
+    "id": "algorithm-generated/113",
+    "agent": "verificationexpert",
+    "step": 3,
+    "truth": [
+     "Reviews_Expert",
+     7
+    ]
+   },
+   {
+    "id": "algorithm-generated/114",
+    "agent": "dataanalysisexpert",
+    "step": 0,
+    "truth": [
+     "Verification_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/115",
+    "agent": "verificationexpert",
+    "step": 1,
+    "truth": [
+     "Verification_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/116",
+    "agent": "datamanipulationexpert",
+    "step": 1,
+    "truth": [
+     "DataAnalysis_Expert",
+     7
+    ]
+   },
+   {
+    "id": "algorithm-generated/117",
+    "agent": "jsonexpert",
+    "step": 0,
+    "truth": [
+     "JSON_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/118",
+    "agent": "statisticsexpert",
+    "step": 1,
+    "truth": [
+     "Statistics_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/119",
+    "agent": "geometryexpert",
+    "step": 0,
+    "truth": [
+     "Geometry_Expert",
+     0
+    ]
+   },
+   {
+    "id": "algorithm-generated/120",
+    "agent": "veganfoodexpert",
+    "step": 8,
+    "truth": [
+     "Vegan_Food_Expert",
+     8
+    ]
+   },
+   {
+    "id": "algorithm-generated/121",
+    "agent": "jsonexpert",
+    "step": 0,
+    "truth": [
+     "Debugging_Expert",
+     1
+    ]
+   },
+   {
+    "id": "algorithm-generated/122",
+    "agent": "accessibilityexpert",
+    "step": 7,
+    "truth": [
+     "BingAPI_Expert",
+     3
+    ]
+   },
+   {
+    "id": "algorithm-generated/123",
+    "agent": "paintballexpert",
+    "step": 3,
+    "truth": [
+     "Paintball_Expert",
+     3
+    ]
+   },
+   {
+    "id": "algorithm-generated/124",
+    "agent": "researchexpert",
+    "step": 8,
+    "truth": [
+     "Research_Expert",
+     8
+    ]
+   },
+   {
+    "id": "algorithm-generated/125",
+    "agent": "nyclocalexpert",
+    "step": 3,
+    "truth": [
+     "MartialArts_Expert",
+     5
+    ]
+   },
+   {
+    "id": "algorithm-generated/126",
+    "agent": "corporatehistoryiposmondaycomexpert",
+    "step": 5,
+    "truth": [
+     "CorporateHistory_IPOs_MondayCom_Expert",
+     5
+    ]
+   },
+   {
+    "id": "hand-crafted/1",
+    "agent": "websurfer",
+    "step": 12,
+    "truth": [
+     "WebSurfer",
+     12
+    ]
+   },
+   {
+    "id": "hand-crafted/2",
+    "agent": "orchestrator",
+    "step": 21,
+    "truth": [
+     "WebSurfer",
+     4
+    ]
+   },
+   {
+    "id": "hand-crafted/3",
+    "agent": "websurfer",
+    "step": 12,
+    "truth": [
+     "WebSurfer",
+     32
+    ]
+   },
+   {
+    "id": "hand-crafted/4",
+    "agent": "websurfer",
+    "step": 8,
+    "truth": [
+     "WebSurfer",
+     8
+    ]
+   },
+   {
+    "id": "hand-crafted/5",
+    "agent": "websurfer",
+    "step": 16,
+    "truth": [
+     "WebSurfer",
+     12
+    ]
+   },
+   {
+    "id": "hand-crafted/6",
+    "agent": "orchestrator",
+    "step": 5,
+    "truth": [
+     "Orchestrator",
+     5
+    ]
+   },
+   {
+    "id": "hand-crafted/7",
+    "agent": "websurfer",
+    "step": 12,
+    "truth": [
+     "WebSurfer",
+     8
+    ]
+   },
+   {
+    "id": "hand-crafted/8",
+    "agent": "websurfer",
+    "step": 16,
+    "truth": [
+     "WebSurfer",
+     8
+    ]
+   },
+   {
+    "id": "hand-crafted/9",
+    "agent": "orchestrator",
+    "step": 6,
+    "truth": [
+     "Orchestrator",
+     25
+    ]
+   },
+   {
+    "id": "hand-crafted/10",
+    "agent": "orchestrator",
+    "step": 9,
+    "truth": [
+     "Orchestrator",
+     9
+    ]
+   },
+   {
+    "id": "hand-crafted/11",
+    "agent": "websurfer",
+    "step": 101,
+    "truth": [
+     "Websurfer",
+     24
+    ]
+   },
+   {
+    "id": "hand-crafted/12",
+    "agent": "assistant",
+    "step": 16,
+    "truth": [
+     "Assistant",
+     16
+    ]
+   },
+   {
+    "id": "hand-crafted/13",
+    "agent": "websurfer",
+    "step": 12,
+    "truth": [
+     "Websurfer",
+     12
+    ]
+   },
+   {
+    "id": "hand-crafted/14",
+    "agent": "websurfer",
+    "step": 28,
+    "truth": [
+     "Orchestrator",
+     14
+    ]
+   },
+   {
+    "id": "hand-crafted/15",
+    "agent": "orchestrator",
+    "step": 6,
+    "truth": [
+     "WebSurfer",
+     8
+    ]
+   },
+   {
+    "id": "hand-crafted/16",
+    "agent": "orchestrator",
+    "step": 9,
+    "truth": [
+     "Orchestrator",
+     15
+    ]
+   },
+   {
+    "id": "hand-crafted/17",
+    "agent": "orchestrator",
+    "step": 9,
+    "truth": [
+     "WebSurfer",
+     8
+    ]
+   },
+   {
+    "id": "hand-crafted/18",
+    "agent": "orchestrator",
+    "step": 28,
+    "truth": [
+     "WebSurfer",
+     16
+    ]
+   },
+   {
+    "id": "hand-crafted/19",
+    "agent": "orchestrator",
+    "step": 17,
+    "truth": [
+     "Orchestrator",
+     50
+    ]
+   },
+   {
+    "id": "hand-crafted/20",
+    "agent": "orchestrator",
+    "step": 18,
+    "truth": [
+     "WebSurfer",
+     3
+    ]
+   },
+   {
+    "id": "hand-crafted/21",
+    "agent": "websurfer",
+    "step": 24,
+    "truth": [
+     "WebSurfer",
+     4
+    ]
+   },
+   {
+    "id": "hand-crafted/22",
+    "agent": "orchestrator",
+    "step": 16,
+    "truth": [
+     "FileSurfer",
+     4
+    ]
+   },
+   {
+    "id": "hand-crafted/23",
+    "agent": "orchestrator",
+    "step": 5,
+    "truth": [
+     "WebSurfer",
+     8
+    ]
+   },
+   {
+    "id": "hand-crafted/24",
+    "agent": "orchestrator",
+    "step": 1,
+    "truth": [
+     "Orchestrator",
+     1
+    ]
+   },
+   {
+    "id": "hand-crafted/25",
+    "agent": "orchestrator",
+    "step": 1,
+    "truth": [
+     "Orchestrator",
+     18
+    ]
+   },
+   {
+    "id": "hand-crafted/26",
+    "agent": "filesurfer",
+    "step": 16,
+    "truth": [
+     "FileSurfer",
+     32
+    ]
+   },
+   {
+    "id": "hand-crafted/27",
+    "agent": "websurfer",
+    "step": 12,
+    "truth": [
+     "WebSurfer",
+     4
+    ]
+   },
+   {
+    "id": "hand-crafted/28",
+    "agent": "orchestrator",
+    "step": 9,
+    "truth": [
+     "WebSurfer",
+     8
+    ]
+   },
+   {
+    "id": "hand-crafted/29",
+    "agent": "websurfer",
+    "step": 12,
+    "truth": [
+     "WebSurfer",
+     12
+    ]
+   },
+   {
+    "id": "hand-crafted/30",
+    "agent": "orchestrator",
+    "step": 68,
+    "truth": [
+     "Assistant",
+     82
+    ]
+   },
+   {
+    "id": "hand-crafted/31",
+    "agent": "orchestrator",
+    "step": 9,
+    "truth": [
+     "Orchestrator",
+     9
+    ]
+   },
+   {
+    "id": "hand-crafted/32",
+    "agent": "orchestrator",
+    "step": 5,
+    "truth": [
+     "Orchestrator",
+     6
+    ]
+   },
+   {
+    "id": "hand-crafted/33",
+    "agent": "orchestrator",
+    "step": 8,
+    "truth": [
+     "WebSurfer",
+     8
+    ]
+   },
+   {
+    "id": "hand-crafted/34",
+    "agent": "websurfer",
+    "step": 4,
+    "truth": [
+     "WebSurfer",
+     4
+    ]
+   },
+   {
+    "id": "hand-crafted/35",
+    "agent": "orchestrator",
+    "step": 9,
+    "truth": [
+     "WebSurfer",
+     12
+    ]
+   },
+   {
+    "id": "hand-crafted/36",
+    "agent": "orchestrator",
+    "step": 9,
+    "truth": [
+     "Orchestrator",
+     9
+    ]
+   },
+   {
+    "id": "hand-crafted/37",
+    "agent": "orchestrator",
+    "step": 12,
+    "truth": [
+     "WebSurfer",
+     4
+    ]
+   },
+   {
+    "id": "hand-crafted/38",
+    "agent": "orchestrator",
+    "step": 31,
+    "truth": [
+     "Orchestrator",
+     3
+    ]
+   },
+   {
+    "id": "hand-crafted/39",
+    "agent": "websurfer",
+    "step": 4,
+    "truth": [
+     "Orchestrator",
+     30
+    ]
+   },
+   {
+    "id": "hand-crafted/40",
+    "agent": "orchestrator",
+    "step": 16,
+    "truth": [
+     "WebSurfer",
+     16
+    ]
+   },
+   {
+    "id": "hand-crafted/41",
+    "agent": "websurfer",
+    "step": 8,
+    "truth": [
+     "WebSurfer",
+     8
+    ]
+   },
+   {
+    "id": "hand-crafted/42",
+    "agent": "orchestrator",
+    "step": 29,
+    "truth": [
+     "Orchestrator",
+     29
+    ]
+   },
+   {
+    "id": "hand-crafted/43",
+    "agent": "orchestrator",
+    "step": 9,
+    "truth": [
+     "Assistant",
+     12
+    ]
+   },
+   {
+    "id": "hand-crafted/44",
+    "agent": "orchestrator",
+    "step": 28,
+    "truth": [
+     "WebSurfer",
+     39
+    ]
+   },
+   {
+    "id": "hand-crafted/45",
+    "agent": "orchestrator",
+    "step": 1,
+    "truth": [
+     "Orchestrator",
+     20
+    ]
+   },
+   {
+    "id": "hand-crafted/46",
+    "agent": "orchestrator",
+    "step": 1,
+    "truth": [
+     "WebSurfer",
+     32
+    ]
+   },
+   {
+    "id": "hand-crafted/47",
+    "agent": "orchestrator",
+    "step": 5,
+    "truth": [
+     "Orchestrator",
+     51
+    ]
+   },
+   {
+    "id": "hand-crafted/48",
+    "agent": "websurfer",
+    "step": 4,
+    "truth": [
+     "WebSurfer",
+     4
+    ]
+   },
+   {
+    "id": "hand-crafted/49",
+    "agent": "assistant",
+    "step": 12,
+    "truth": [
+     "WebSurfer",
+     12
+    ]
+   },
+   {
+    "id": "hand-crafted/50",
+    "agent": "orchestrator",
+    "step": 6,
+    "truth": [
+     "WebSurfer",
+     5
+    ]
+   },
+   {
+    "id": "hand-crafted/51",
+    "agent": "orchestrator",
+    "step": 1,
+    "truth": [
+     "FileSurfer",
+     5
+    ]
+   },
+   {
+    "id": "hand-crafted/52",
+    "agent": "orchestrator",
+    "step": 5,
+    "truth": [
+     "WebSurfer",
+     4
+    ]
+   },
+   {
+    "id": "hand-crafted/53",
+    "agent": "assistant",
+    "step": 24,
+    "truth": [
+     "Assistant",
+     24
+    ]
+   },
+   {
+    "id": "hand-crafted/54",
+    "agent": "orchestrator",
+    "step": 12,
+    "truth": [
+     "WebSurfer",
+     15
+    ]
+   },
+   {
+    "id": "hand-crafted/55",
+    "agent": "orchestrator",
+    "step": 5,
+    "truth": [
+     "Orchestrator",
+     18
+    ]
+   },
+   {
+    "id": "hand-crafted/56",
+    "agent": "orchestrator",
+    "step": 3,
+    "truth": [
+     "WebSurfer",
+     4
+    ]
+   },
+   {
+    "id": "hand-crafted/57",
+    "agent": "orchestrator",
+    "step": 9,
+    "truth": [
+     "WebSurfer",
+     12
+    ]
+   },
+   {
+    "id": "hand-crafted/58",
+    "agent": "orchestrator",
+    "step": 1,
+    "truth": [
+     "Orchestrator",
+     22
+    ]
+   }
+  ]
+ }
+}
