@@ -103,6 +103,9 @@ class _Handler(BaseHTTPRequestHandler):
 
 class FakeLLMServer(ThreadingHTTPServer):
     daemon_threads = True
+    # The stdlib listen backlog is 5. Parallel benchmark trials open more
+    # connections than that at once, and macOS resets the overflow.
+    request_queue_size = 128
 
     def __init__(
         self,

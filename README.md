@@ -390,16 +390,14 @@ What this does not show:
 ### On the fake server
 
 ```bash
-python -m bench.blame_eval --runs 100
+python -m bench.blame_eval --runs 100 --workers 4
 ```
-
-It runs one trial at a time: with several workers the fake server resets some connections (its listen backlog is the stdlib default of 5), and a reset counts as a failed run or a failed fork.
 
 On clean reruns, where a redrawn call never repeats the fault, there are 100 runs per workload:
 
 | Workload | ledger step acc | scan step acc | random step acc | ledger forks | scan forks | ledger live calls | scan live calls |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| toy | 1.00 (0.96–1.00) | 1.00 | 0.09 | 4.8 | 4.9 | 14.8 | 9.3 |
+| toy | 1.00 (0.96–1.00) | 1.00 | 0.09 | 4.6 | 4.8 | 13.9 | 9.1 |
 | chain-8 | 1.00 (0.96–1.00) | 1.00 | 0.11 | 4.6 | 4.8 | 18.0 | 16.6 |
 | chain-16 | 1.00 (0.96–1.00) | 1.00 | 0.07 | 6.5 | 9.2 | 45.5 | 57.6 |
 | chain-32 | 1.00 (0.96–1.00) | 1.00 | 0.04 | 8.5 | 18.1 | 109.5 | 214.4 |

@@ -1,10 +1,10 @@
 {
  "benchmark": "blame",
- "date": "2026-11-21T18:44:58+00:00",
+ "date": "2026-11-21T18:51:28+00:00",
  "runs": 100,
  "seed": 7,
  "repeats": 1,
- "workers": 1,
+ "workers": 4,
  "threshold": 0.5,
  "noise": {
   "recur": 0.0,
@@ -23,7 +23,7 @@
   "total": 0.0
  },
  "max_dollars": null,
- "wall_s": 86.9,
+ "wall_s": 75.5,
  "machine": {
   "platform": "macOS-27.2.1-arm64-arm-64bit",
   "python": "3.12.16"
@@ -55,13 +55,13 @@
       ]
      },
      "forks": {
-      "mean": 4.81,
+      "mean": 4.63,
       "p50": 7,
       "p95": 7,
       "max": 7
      },
      "live_calls": {
-      "mean": 14.78,
+      "mean": 13.88,
       "p50": 19,
       "p95": 33,
       "max": 33
@@ -90,13 +90,13 @@
       ]
      },
      "forks": {
-      "mean": 4.92,
+      "mean": 4.81,
       "p50": 5,
       "p95": 10,
       "max": 10
      },
      "live_calls": {
-      "mean": 9.32,
+      "mean": 9.07,
       "p50": 7,
       "p95": 26,
       "max": 26
