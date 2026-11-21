@@ -1,0 +1,180 @@
+{
+ "benchmark": "blame",
+ "date": "2026-11-21T09:14:40+00:00",
+ "runs": 200,
+ "seed": 7,
+ "repeats": 3,
+ "workers": 8,
+ "threshold": 0.0,
+ "noise": {
+  "recur": 0.0,
+  "flake": 0.0
+ },
+ "budget": {
+  "forks": 60
+ },
+ "judge": "gpt-6.2-sol",
+ "model": "gpt-6-luna",
+ "reasoning_effort": "low",
+ "dollars": {
+  "judge": 0.3174,
+  "ledger": 0.1312,
+  "random": 0.0,
+  "record": 0.0557,
+  "scan": 0.1536,
+  "total": 0.658
+ },
+ "max_dollars": 2.0,
+ "wall_s": 1479.3,
+ "machine": {
+  "platform": "macOS-27.2.1-arm64-arm-64bit",
+  "python": "3.12.16"
+ },
+ "workloads": {
+  "orders": {
+   "runs": 200,
+   "attempted": 200,
+   "skipped": {
+    "clean_failed": 1,
+    "fault_masked": 36
+   },
+   "faulted": 163,
+   "methods": {
+    "ledger": {
+     "trials": 163,
+     "step_accuracy": {
+      "rate": 0.994,
+      "ci95": [
+       0.966,
+       0.999
+      ]
+     },
+     "agent_accuracy": {
+      "rate": 0.994,
+      "ci95": [
+       0.966,
+       0.999
+      ]
+     },
+     "forks": {
+      "mean": 10.56,
+      "p50": 13,
+      "p95": 15,
+      "max": 17
+     },
+     "live_calls": {
+      "mean": 32.99,
+      "p50": 46,
+      "p95": 60,
+      "max": 71
+     },
+     "dollars": {
+      "mean": 0.000805
+     },
+     "status": {
+      "found": 163
+     }
+    },
+    "scan": {
+     "trials": 163,
+     "step_accuracy": {
+      "rate": 0.994,
+      "ci95": [
+       0.966,
+       0.999
+      ]
+     },
+     "agent_accuracy": {
+      "rate": 0.994,
+      "ci95": [
+       0.966,
+       0.999
+      ]
+     },
+     "forks": {
+      "mean": 12.4,
+      "p50": 16,
+      "p95": 19,
+      "max": 25
+     },
+     "live_calls": {
+      "mean": 32.97,
+      "p50": 42,
+      "p95": 60,
+      "max": 90
+     },
+     "dollars": {
+      "mean": 0.000943
+     },
+     "status": {}
+    },
+    "random": {
+     "trials": 163,
+     "step_accuracy": {
+      "rate": 0.123,
+      "ci95": [
+       0.081,
+       0.182
+      ]
+     },
+     "agent_accuracy": {
+      "rate": 0.233,
+      "ci95": [
+       0.175,
+       0.304
+      ]
+     },
+     "forks": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "live_calls": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "dollars": {
+      "mean": 0.0
+     },
+     "status": {}
+    },
+    "judge": {
+     "trials": 163,
+     "step_accuracy": {
+      "rate": 0.687,
+      "ci95": [
+       0.612,
+       0.753
+      ]
+     },
+     "agent_accuracy": {
+      "rate": 0.687,
+      "ci95": [
+       0.612,
+       0.753
+      ]
+     },
+     "forks": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "live_calls": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "dollars": {
+      "mean": 0.001947
+     },
+     "status": {}
+    }
+   }
+  }
+ }
+}
