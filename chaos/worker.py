@@ -87,7 +87,7 @@ def _settled(log: list[Any]) -> bool:
 def ledger_pass(data: Path, events: Events, tickets: list[dict[str, Any]]) -> int:
     """One pass over the tickets with Ledger. Returns how many are not settled."""
     import ledger
-    from examples import refund_agent
+    from ledger.examples import refund_agent
 
     graph = refund_agent.graph_from_env()
     unsettled = 0
@@ -101,7 +101,7 @@ def ledger_pass(data: Path, events: Events, tickets: list[dict[str, Any]]) -> in
             try:
                 if not log:
                     with ledger.record(store, run_id=run_id) as session:
-                        session.graph_ref = "examples.refund_agent:graph_from_env"
+                        session.graph_ref = "ledger.examples.refund_agent:graph_from_env"
                         graph.invoke(ticket)
                 else:
                     with ledger.resume(run_id, store):
@@ -133,7 +133,7 @@ def langgraph_pass(data: Path, events: Events, tickets: list[dict[str, Any]]) ->
     """One pass over the tickets with stock LangGraph. Returns how many are not settled."""
     from langgraph.checkpoint.sqlite import SqliteSaver
 
-    from examples import refund_agent
+    from ledger.examples import refund_agent
 
     attempts_path = data / "langgraph-attempts.json"
     attempts: dict[str, int] = (

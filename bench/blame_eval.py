@@ -25,13 +25,13 @@ Step-level accuracy counts the exact step; agent-level counts its node.
 Workloads, on the fake LLM server and local tools:
 
 toy
-    The 5-node pipeline (``examples/toy_pipeline.py``); faults hit its LLM
+    The 5-node pipeline (``ledger/examples/toy_pipeline.py``); faults hit its LLM
     calls. The run fails if "CORRUPT" reaches the plan, a note or the draft.
 chain-N
     N tool calls in sequence, each building on the last; the run fails if
     "BAD" reaches the end. Shows how forks grow with the step count.
 orders
-    The order-total pipeline (``examples/order_pipeline.py``) on a real
+    The order-total pipeline (``ledger/examples/order_pipeline.py``) on a real
     model (``--model``, an OpenAI-compatible endpoint; key as for the
     judge). Faults change one number in a call's outcome, so the trace
     reads plausibly; the run fails if the reply quotes the wrong total. A
@@ -80,8 +80,8 @@ from openai import OpenAI
 
 import ledger
 from bench.replay_fidelity import _pcts
-from examples import toy_pipeline as toy
-from examples import order_pipeline as orders
+from ledger.examples import toy_pipeline as toy
+from ledger.examples import order_pipeline as orders
 from ledger.blame import Budget, Pricing, wilson
 from ledger.blame.budget import usage
 from ledger.core.events import body_kind, load_payload

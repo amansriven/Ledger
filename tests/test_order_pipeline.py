@@ -11,7 +11,7 @@ from openai.types.chat import ChatCompletion
 
 import ledger
 from bench import blame_eval
-from examples import order_pipeline as op
+from ledger.examples import order_pipeline as op
 from ledger.testing import faults
 
 

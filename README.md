@@ -2,7 +2,23 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay) done; M2 (exactly-once effects) done; M3 (counterfactual blame) gate passed.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. Recording adds 0.20 ms per step at p50 (0.41 ms at p95) on the 5-node pipeline. For M3, `ledger.diagnose` finds the step that broke a failed run by bisecting over forked replays, and `ledger.testing.faults` makes failed runs with a known guilty step. `bench/blame_eval.py` scores it against a naive rerun scan and random pick on injected faults; `bench/who_and_when.py` scores log-only methods on the Who&When logs: an LLM judge on `gpt-6.2-sol` names the responsible agent in 60% of the 184 logs and the decisive step in 43%. On a real model (`gpt-6-luna` pipeline, injected faults), `ledger.diagnose` names the guilty step in 99.4% of 163 failed runs against 68.7% for that judge, which passes the M3 gate on this workload. The UI comes later (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay) done; M2 (exactly-once effects) done; M3 (counterfactual blame) gate passed.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays, forks, resumes and diagnoses runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. Recording adds 0.20 ms per step at p50 (0.41 ms at p95) on the 5-node pipeline. For M3, `ledger.diagnose` finds the step that broke a failed run by bisecting over forked replays, and `ledger.testing.faults` makes failed runs with a known guilty step. `bench/blame_eval.py` scores it against a naive rerun scan and random pick on injected faults; `bench/who_and_when.py` scores log-only methods on the Who&When logs: an LLM judge on `gpt-6.2-sol` names the responsible agent in 60% of the 184 logs and the decisive step in 43%. On a real model (`gpt-6-luna` pipeline, injected faults), `ledger.diagnose` names the guilty step in 99.4% of 163 failed runs against 68.7% for that judge, which passes the M3 gate on this workload. The UI comes later (see `Ledger Detailed Build Plan.md`).
+
+## Install
+
+```sh
+pip install ledger-runtime                     # the package is ledger-runtime; you import ledger
+pip install 'ledger-runtime[examples]'         # adds Stripe, for the example refund agent
+```
+
+To try the refund agent against the bundled fake Stripe and LLM servers, then replay it from the log:
+
+```sh
+python -m ledger.testing.fake_stripe --port 12111 &
+python -m ledger.testing.fake_llm --port 8787 &
+python -m ledger.examples.refund_agent         # seeds a charge, records one refund
+ledger replay --all                            # live=0, output=match
+```
 
 ## Integration
 
@@ -180,12 +196,12 @@ The finished log is a complete recording: it replays strictly like any other. A 
 
 ### Refund agent
 
-`examples/refund_agent.py` turns a support ticket into a Stripe refund: `lookup` reads the charge (a tool), and `decide` applies the refund policy in code, leaving a charge another ticket has claimed to that ticket. `refund` first claims the charge for this ticket in its Stripe metadata (an effect whose compensation releases the claim), then creates the refund (an effect whose `reconcile` finds a refund by the key in its metadata). Last, `reply` has the LLM draft the answer. If Stripe refuses the refund, the saga releases the claim, so another ticket or a person can take over. It runs with the official `stripe` SDK against `ledger.testing.fake_stripe`, a fake Stripe API that honours idempotency keys and can drop a connection before or after applying a request, or answer 500. To point it at Stripe itself, set `STRIPE_API_BASE=` (empty) and put a test key in `STRIPE_SECRET_KEY`, in the environment or in `.env` at the repo root (git ignores it). Only that one variable is read from `.env`, live keys are refused, and the fake server never gets the real key.
+`ledger/examples/refund_agent.py` turns a support ticket into a Stripe refund: `lookup` reads the charge (a tool), and `decide` applies the refund policy in code, leaving a charge another ticket has claimed to that ticket. `refund` first claims the charge for this ticket in its Stripe metadata (an effect whose compensation releases the claim), then creates the refund (an effect whose `reconcile` finds a refund by the key in its metadata). Last, `reply` has the LLM draft the answer. If Stripe refuses the refund, the saga releases the claim, so another ticket or a person can take over. It runs with the official `stripe` SDK against `ledger.testing.fake_stripe`, a fake Stripe API that honours idempotency keys and can drop a connection before or after applying a request, or answer 500. To point it at Stripe itself, set `STRIPE_API_BASE=` (empty) and put a test key in `STRIPE_SECRET_KEY`, in the environment or in `.env` at the repo root (git ignores it). Only that one variable is read from `.env`, live keys are refused, and the fake server never gets the real key.
 
 ```sh
 uv run python -m ledger.testing.fake_stripe --port 12111 &
 uv run python -m ledger.testing.fake_llm --port 8787 &
-uv run python -m examples.refund_agent          # seeds a charge, records one refund
+uv run python -m ledger.examples.refund_agent          # seeds a charge, records one refund
 ```
 
 `tests/test_refund_agent.py` covers:
@@ -330,7 +346,7 @@ Step accuracy counts the exact step; agent accuracy counts its node. Accuracy in
 
 ### On a real model
 
-The M3 gate, beating the LLM-judge baseline on attribution accuracy, is measured on the `orders` workload, `examples/order_pipeline.py`:
+The M3 gate, beating the LLM-judge baseline on attribution accuracy, is measured on the `orders` workload, `ledger/examples/order_pipeline.py`:
 
 - **The pipeline:** a customer asks in plain words for some items, shipped to a state, with a coupon. `intake` turns the request into a JSON order. Then `pricing` (a catalog lookup per item, then the model adds up the subtotal), `tax` and `coupon` run in parallel. `accountant` applies the discount and the tax, and `writer` answers the customer.
 - **Success:** the reply quotes the right total to the cent. The right total follows from the catalog.
@@ -471,16 +487,19 @@ Events go to SQLite in WAL mode (`$LEDGER_DB`, default `ledger.db`), one fsynced
 ## CLI
 
 ```sh
-ledger record -g examples.toy_pipeline:graph_from_env --input '{"topic": "fencing tokens"}'
+ledger record -g ledger.examples.toy_pipeline:graph_from_env --input '{"topic": "fencing tokens"}'
 ledger runs                                    # every run: mode, source, status, live calls
 ledger replay RUN_ID                           # strict; exit 1 unless identical
 ledger replay --all --live                     # report divergences instead of failing
 ledger steps RUN_ID [--node write]             # the calls a fork can target, by index
 ledger fork RUN_ID --edit 4='a different summary' --edit-json 3='{"results": []}' --rerun 11
 ledger resume --all                            # finish recordings that crashed or failed
+ledger diagnose RUN_ID --check app:passed -o diagnosis.json   # which step broke a failed run
 ```
 
 `-g` names the graph as `module:attr`: a compiled graph, or a function with no arguments that returns one. `record` logs it with the run, so `replay` and `fork` find the graph again. They fall back to `$LEDGER_GRAPH` for runs recorded from Python, and an explicit `-g` overrides both. Replays and forks take their input from the recording. A run that failed when recorded replays identically if it fails with the same error. `--db` picks the event store (else `$LEDGER_DB`, else `ledger.db`). `python -m ledger` is the same command.
+
+`diagnose` runs `ledger.diagnose` on a failed run. `--check` (else `$LEDGER_CHECK`) names a function that takes the run's output, or its output and input, and returns whether the run passed. The diagnosis goes to stdout or `--out` as JSON (schema `ledger.diagnosis/1`): the status (`found`, `no_step`, `budget` or `inconsistent`), the guilty steps, every counterfactual with its pass rate and Wilson interval, and what was spent. A one-line verdict goes to stderr. `--repeats`, `--threshold`, `--kind`, `--max-forks`, `--max-live-calls`, `--max-dollars` with `--price IN OUT`, and `--live-effects` map onto the Python arguments described under [Blame](#blame). The exit status is 0 when it found the step, 1 when it didn't, and 2 on an error, such as a run that passes its check.
 
 ## Try it
 
@@ -494,7 +513,7 @@ uv run python -m bench.replay_fidelity run       # the 200-run replay benchmark 
 
 # Local: fake OpenAI-compatible server, record, stop server, replay
 uv run python -m ledger.testing.fake_llm --port 8787 &
-uv run ledger record -g examples.toy_pipeline:graph_from_env --input '{"topic": "fencing tokens"}' --runs 5
+uv run ledger record -g ledger.examples.toy_pipeline:graph_from_env --input '{"topic": "fencing tokens"}' --runs 5
 kill %1
 uv run ledger replay --all
 
@@ -517,14 +536,18 @@ docker compose -f deploy/docker-compose.yml run --rm replay
 | `ledger/testing/fake_llm.py` | Nondeterministic fake LLM and search server |
 | `ledger/testing/faults.py` | Fault injection into recordings, with the guilty step as ground truth |
 | `ledger/testing/fake_stripe.py` | Fake Stripe API (charges, refunds, idempotency keys) with injectable faults |
-| `examples/refund_agent.py` | Support-ticket refund agent; the M2 workload |
+| `ledger/examples/refund_agent.py` | Support-ticket refund agent; the M2 workload |
 | `chaos/` | Chaos benchmark: worker, harness (local `kill -9` or `docker kill` with Toxiproxy), invariants |
-| `examples/toy_pipeline.py` | 5-node pipeline with a 3-way parallel fan-out |
+| `ledger/examples/toy_pipeline.py` | 5-node pipeline with a 3-way parallel fan-out |
 | `bench/replay_fidelity.py` | Replay-fidelity benchmark against LangGraph checkpoint replay; results in `bench/results/` |
-| `examples/order_pipeline.py` | Order-total pipeline whose answer can be checked; the real-model blame workload |
+| `ledger/examples/order_pipeline.py` | Order-total pipeline whose answer can be checked; the real-model blame workload |
 | `bench/blame_eval.py` | Blame benchmark: injected faults, scored for `diagnose`, a rerun scan, random pick and an LLM judge |
 | `bench/who_and_when.py` | Who&When: download, loader, and log-only methods (random, an LLM judge) scored on it |
 | `bench/overhead.py` | Overhead benchmark: added latency per step with Ledger recording and replaying |
 | `deploy/` | Dockerfile and Compose file |
 
 Payloads are stored as canonical JSON inside protobuf events, because protobuf serialization is not canonical and would break content hashing.
+
+## License
+
+MIT. See [LICENSE](https://github.com/amansriven/Ledger/blob/main/LICENSE).

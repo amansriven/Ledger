@@ -6,7 +6,7 @@ import pytest
 from openai import OpenAI
 
 import ledger
-from examples import refund_agent
+from ledger.examples import refund_agent
 from ledger.core.events import body_kind, load_payload, pb
 from tests.conftest import crash_after, replays_strictly
 

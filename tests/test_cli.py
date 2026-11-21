@@ -11,7 +11,7 @@ from ledger.cli import CLIError, load_graph, main
 from ledger.core.events import body_kind
 from ledger.intercept.langgraph import InstrumentedGraph
 
-TOY = "examples.toy_pipeline:graph_from_env"
+TOY = "ledger.examples.toy_pipeline:graph_from_env"
 SIMPLE = "tests.cli_targets:make"
 
 
@@ -236,3 +236,82 @@ def test_fork_run_is_marked_in_the_log(db, capsys):
     with ledger.EventStore(db) as store:
         kinds = [body_kind(ev) for ev in store.events(f"{run_id}.fork-1")]
     assert kinds == ["run_started", "diverged", "tool_call", "run_finished"]
+
+
+# diagnose
+
+
+def record_bad_bump(db, x=1):
+    """A run of tests.cli_targets whose one tool call returned -5."""
+    from ledger.testing import faults
+    from tests import cli_targets
+
+    graph = ledger.instrument(cli_targets.make())
+    fault = faults.Fault(node="step", corrupt=lambda v: -5)
+    with ledger.EventStore(db) as store, ledger.record(store) as rec, faults.inject(fault):
+        graph.invoke({"x": x})
+    return rec.run_id, fault.step
+
+
+def test_diagnose_prints_the_guilty_step_as_json(db, capsys, tmp_path):
+    run_id, guilty = record_bad_bump(db)
+    code, out, err = run(capsys, "diagnose", run_id, "-g", SIMPLE, "--check", "tests.cli_targets:positive")
+    assert code == 0, err
+    report = json.loads(out)
+    assert report["schema"] == "ledger.diagnosis/1"
+    assert report["status"] == "found" and report["complete"]
+    assert report["step"]["key"] == guilty and report["step"]["kind"] == "tool_call"
+    assert [s["key"] for s in report["steps"]] == [guilty]
+    assert report["graph"] == SIMPLE and report["check"] == "tests.cli_targets:positive"
+    [cf] = report["counterfactuals"]
+    assert cf["fixed"] and cf["run_ids"] == [f"{run_id}.fork-1"]
+    assert report["spent"]["forks"] == 1
+    assert err.startswith(f"found: #{report['step']['index']} {guilty}")
+
+    # --out writes the same JSON to a file; the check can take the input too.
+    path = tmp_path / "d.json"
+    code, out, _ = run(capsys, "diagnose", run_id, "-g", SIMPLE,
+                       "--check", "tests.cli_targets:one_more", "-o", str(path))
+    assert code == 0 and out == ""
+    assert json.loads(path.read_text())["step"]["key"] == guilty
+
+
+def test_diagnose_without_a_step_or_budget_exits_1(db, capsys):
+    run_id, _ = record_bad_bump(db)
+    code, out, err = run(capsys, "diagnose", run_id, "-g", SIMPLE,
+                         "-c", "tests.cli_targets:positive", "--max-forks", "0")
+    assert code == 1
+    report = json.loads(out)
+    assert report["status"] == "budget" and report["steps"] == []
+    assert len(report["narrowed"]) == 1 and report["settings"]["budget"]["forks"] == 0
+    assert "narrowed to 1 candidates" in err
+
+    # x < 0 raises before any call: nothing recorded can be blamed.
+    with ledger.EventStore(db) as store, ledger.record(store) as rec:
+        try:
+            ledger.instrument(__import__("tests.cli_targets").cli_targets.make()).invoke({"x": -1})
+        except ValueError:
+            pass
+    code, out, _ = run(capsys, "diagnose", rec.run_id, "-g", SIMPLE, "-c", "tests.cli_targets:positive")
+    assert code == 1 and json.loads(out)["status"] == "no_step"
+
+
+def test_diagnose_errors(db, capsys, monkeypatch):
+    bad_run, _ = record_bad_bump(db)
+    _, out, _ = run(capsys, "record", "-g", SIMPLE, "--input", '{"x": 1}')
+    good_run = out.split()[1]
+    for run_id, argv, message in [
+        (good_run, ["-c", "tests.cli_targets:positive"], "nothing to blame"),
+        (bad_run, ["-g", SIMPLE], "needs --check"),
+        (bad_run, ["-g", SIMPLE, "-c", "tests.cli_targets:too_many_args"], "must take"),
+        (bad_run, ["-g", SIMPLE, "-c", "tests.cli_targets:not_a_graph"], "not a function"),
+        (bad_run, ["-g", SIMPLE, "-c", "tests.cli_targets:positive", "--max-dollars", "1"], "needs --price"),
+        (bad_run, ["-g", SIMPLE, "-c", "tests.cli_targets:positive", "--repeats", "0"], "at least 1"),
+        ("nope", ["-g", SIMPLE, "-c", "tests.cli_targets:positive"], "no run"),
+    ]:
+        code, _, err = run(capsys, "diagnose", run_id, *argv)
+        assert code == 2 and message in err, (argv, err)
+    # $LEDGER_CHECK stands in for --check.
+    monkeypatch.setenv("LEDGER_CHECK", "tests.cli_targets:positive")
+    code, _, _ = run(capsys, "diagnose", bad_run, "-g", SIMPLE)
+    assert code == 0

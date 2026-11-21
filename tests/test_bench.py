@@ -48,7 +48,7 @@ def test_a_tampered_recording_is_not_identical(tmp_path):
     with bench.fake_server_env():
         bench.record(data, runs=1, seed=0)
     import ledger
-    from examples import toy_pipeline as toy
+    from ledger.examples import toy_pipeline as toy
 
     with ledger.EventStore(data / bench.LEDGER_DB) as store, bench.network_off():
         [run_id] = toy.recorded_runs(store)

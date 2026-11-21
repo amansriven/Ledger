@@ -8,8 +8,8 @@ import pytest
 from openai import OpenAI
 
 import ledger
-from examples import refund_agent
-from examples.toy_pipeline import build_graph
+from ledger.examples import refund_agent
+from ledger.examples.toy_pipeline import build_graph
 from ledger.core.events import load_payload
 from ledger.testing.fake_llm import FakeLLMServer
 from ledger.testing.fake_stripe import FakeStripeServer

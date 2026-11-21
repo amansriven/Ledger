@@ -6,7 +6,7 @@ import sqlite3
 import pytest
 
 import ledger
-from examples.toy_pipeline import recorded_runs
+from ledger.examples.toy_pipeline import recorded_runs
 from ledger.core.blobs import BlobCorrupt, BlobMissing, BlobStore
 from ledger.core.events import load_payload, make_payload, new_event, pb
 

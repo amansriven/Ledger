@@ -1,6 +1,6 @@
 """Overhead benchmark: the latency Ledger adds per step, and the log it writes.
 
-Runs the 5-node pipeline (``examples/toy_pipeline.py``) N times in each of
+Runs the 5-node pipeline (``ledger/examples/toy_pipeline.py``) N times in each of
 three modes, interleaved, against the fake LLM and search server answering
 with no added delay. What's timed is then LangGraph, the local HTTP round
 trips and Ledger:
@@ -47,7 +47,7 @@ from openai import OpenAI
 
 import ledger
 from bench.replay_fidelity import _pcts
-from examples import toy_pipeline as toy
+from ledger.examples import toy_pipeline as toy
 from ledger.testing.fake_llm import FakeLLMServer
 
 ROOT = Path(__file__).resolve().parents[1]

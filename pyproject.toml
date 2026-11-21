@@ -1,14 +1,37 @@
 [project]
 name = "ledger-runtime"
-version = "0.0.1"
+dynamic = ["version"]
 description = "A runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Aman Sriven" }]
+keywords = ["langgraph", "agents", "llm", "replay", "debugging", "exactly-once", "observability"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Debuggers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "langgraph>=0.6",
     "openai>=1.40",
     "protobuf>=7.35",
 ]
+
+[project.optional-dependencies]
+# What the example refund agent needs on top of the runtime.
+examples = ["stripe>=17.1.0"]
+
+[project.urls]
+Homepage = "https://github.com/amansriven/Ledger"
+Source = "https://github.com/amansriven/Ledger"
+Issues = "https://github.com/amansriven/Ledger/issues"
 
 [project.scripts]
 ledger = "ledger.cli:main"
@@ -30,8 +53,14 @@ examples = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "ledger/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["ledger"]
+
+[tool.hatch.build.targets.sdist]
+include = ["ledger/", "proto/", "README.md", "LICENSE", "pyproject.toml"]
 
 [tool.uv]
 default-groups = ["dev", "bench", "examples"]
