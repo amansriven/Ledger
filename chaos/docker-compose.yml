@@ -1,0 +1,51 @@
+# The chaos benchmark's services. The harness drives them; from the repo root:
+#
+#   uv run python -m chaos.harness --mode docker --runs 10000
+#
+# The worker reaches Stripe only through Toxiproxy (toxiproxy:22220), which the
+# harness configures to cut a share of connections. The harness kills the
+# worker container with `docker kill` and starts it again. Ports 12111 (fake
+# Stripe) and 8474 (Toxiproxy's API) are published for the harness only.
+
+name: ledger-chaos
+
+services:
+  fakestripe:
+    image: ledger-worker:dev
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["python", "-m", "ledger.testing.fake_stripe", "--host", "0.0.0.0", "--port", "12111"]
+    ports: ["127.0.0.1:12111:12111"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:12111/healthz')"]
+      interval: 2s
+      retries: 15
+
+  fakellm:
+    image: ledger-worker:dev
+    command: ["python", "-m", "ledger.testing.fake_llm", "--host", "0.0.0.0", "--port", "8787",
+              "--max-latency-ms", "5"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8787/healthz')"]
+      interval: 2s
+      retries: 15
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    ports: ["127.0.0.1:8474:8474"]
+    healthcheck:
+      test: ["CMD", "/toxiproxy-cli", "list"]
+      interval: 2s
+      retries: 15
+
+  worker:
+    image: ledger-worker:dev
+    environment:
+      STRIPE_API_BASE: http://toxiproxy:22220
+      OPENAI_BASE_URL: http://fakellm:8787/v1
+      OPENAI_API_KEY: fake
+    volumes:
+      - ./.work:/work
+    depends_on: [fakestripe, fakellm, toxiproxy]
+    profiles: ["worker"]

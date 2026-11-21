@@ -11,6 +11,7 @@ RUN uv sync --frozen --no-dev --group bench --group examples --no-install-projec
 COPY ledger ledger
 COPY examples examples
 COPY bench bench
+COPY chaos/*.py chaos/
 RUN uv sync --frozen --no-dev --group bench --group examples
 
 ENV PATH=/app/.venv/bin:$PATH
