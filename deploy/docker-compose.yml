@@ -6,8 +6,12 @@
 #   docker compose -f deploy/docker-compose.yml run --rm bench-record   # 200 runs, both systems
 #   docker compose -f deploy/docker-compose.yml run --rm bench-replay   # replay them, no network
 #
+#   docker compose -f deploy/docker-compose.yml up -d ui            # trace UI on http://127.0.0.1:8700
+#
 # `replay` runs with network_mode: none, so it can only succeed if every call
-# is answered from the event log.
+# is answered from the event log. `ui` serves the same store the jobs write
+# to and follows runs as they are recorded; it waits (restarting) until the
+# first job has created the store.
 
 name: ledger
 
@@ -71,6 +75,21 @@ services:
       ["python", "-m", "bench.replay_fidelity", "replay", "--data", "/data/bench",
        "--require-offline", "fakellm:8787"]
     profiles: ["jobs"]
+
+  ui:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    image: ledger-trace:dev
+    # Root, like the jobs that own the volume: reading a live WAL store needs
+    # its -shm file to be writable.
+    user: "0:0"
+    command: ["--db", "/data/ledger.db", "--addr", "0.0.0.0:8700"]
+    volumes:
+      - ledger-data:/data
+    ports:
+      - "127.0.0.1:8700:8700"
+    restart: on-failure
 
 volumes:
   ledger-data:

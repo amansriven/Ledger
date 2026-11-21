@@ -20,3 +20,6 @@ server/webui/dist/*
 ui/node_modules/
 ui/build/
 ui/.svelte-kit/
+
+# Built by `make server`
+bin/

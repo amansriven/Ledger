@@ -1,0 +1,20 @@
+# Keep the build context small: local environments, build output, data.
+.git
+.venv
+**/__pycache__
+.pytest_cache
+*.db
+*.db-wal
+*.db-shm
+*.db.blobs
+dist
+bin
+chaos/.work
+bench/data
+ui/node_modules
+ui/build
+ui/.svelte-kit
+ledger/ui/static
+server/webui/dist/*
+!server/webui/dist/.gitkeep
+.env

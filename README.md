@@ -2,7 +2,7 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay) done; M2 (exactly-once effects) done; M3 (counterfactual blame) gate passed.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays, forks, resumes and diagnoses runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. Recording adds 0.20 ms per step at p50 (0.41 ms at p95) on the 5-node pipeline. For M3, `ledger.diagnose` finds the step that broke a failed run by bisecting over forked replays, and `ledger.testing.faults` makes failed runs with a known guilty step. `bench/blame_eval.py` scores it against a naive rerun scan and random pick on injected faults; `bench/who_and_when.py` scores log-only methods on the Who&When logs: an LLM judge on `gpt-6.2-sol` names the responsible agent in 60% of the 184 logs and the decisive step in 43%. On a real model (`gpt-6-luna` pipeline, injected faults), `ledger.diagnose` names the guilty step in 99.4% of 163 failed runs against 68.7% for that judge, which passes the M3 gate on this workload. The UI comes later (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay) done; M2 (exactly-once effects) done; M3 (counterfactual blame) gate passed.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays, forks, resumes and diagnoses runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. Recording adds 0.20 ms per step at p50 (0.41 ms at p95) on the 5-node pipeline. For M3, `ledger.diagnose` finds the step that broke a failed run by bisecting over forked replays, and `ledger.testing.faults` makes failed runs with a known guilty step. `bench/blame_eval.py` scores it against a naive rerun scan and random pick on injected faults; `bench/who_and_when.py` scores log-only methods on the Who&When logs: an LLM judge on `gpt-6.2-sol` names the responsible agent in 60% of the 184 logs and the decisive step in 43%. On a real model (`gpt-6-luna` pipeline, injected faults), `ledger.diagnose` names the guilty step in 99.4% of 163 failed runs against 68.7% for that judge, which passes the M3 gate on this workload. For M4, a trace UI shows each run as a live timeline, diffs a replay or fork against its recording call by call, and draws a diagnosis as the bisection it ran, with the guilty call highlighted; `ledger ui` serves it from the pip package and `ledger-server`, a Go binary, serves it for the hosted demo (see [Trace UI](#trace-ui)).
 
 ## Install
 
@@ -506,6 +506,27 @@ ledger ui [--port 8700] [--open]               # the trace UI and its API, read-
 
 `ui` serves the trace API (`ledger.v1.TraceService` in `proto/trace_service.proto`, over the [Connect](https://connectrpc.com/docs/protocol) protocol with JSON) and the built trace UI on `127.0.0.1:8700`. It opens the store read-only, so it can run beside a process that is recording, and `WatchRun` streams a run's events as they are logged.
 
+## Trace UI
+
+The trace UI reads the event store and has three views:
+
+- **Runs and timeline.** Every run, with replays and forks under their recording. A run opens as a timeline: one lane per node, one bar per call, effects from their pending record to their outcome, and markers where the run was resumed or finished. A run that is still being recorded fills in as it goes. Clicking a call shows its step key, latency, idempotency key, and request and response.
+- **Diff** (`/diff?b=<run>`). A replay or fork against the run it came from, or any two runs, matched call by call on step keys the way replay matches them: same, changed, edited, rerun, diverged (with the reason), or only in one run. Opening a row shows a line diff of the request and the outcome, with LLM prompts shown as text.
+- **Blame** (`/runs/<run>/blame`). A diagnosis saved by `ledger diagnose`: the verdict, then one row per counterfactual fork showing which calls it drew again and whether that fixed the run, then the failed run's timeline with the guilty call highlighted.
+
+Two servers answer the same API (`ledger.v1.TraceService` in `proto/trace_service.proto`) and serve the same UI:
+
+```sh
+ledger ui --db ledger.db --open                 # in the pip package: Python, no other dependencies
+make server && bin/ledger-server --db ledger.db  # a Go binary with the UI embedded
+make image && docker run --rm -p 8700:8700 ledger-trace   # the hosted read-only demo
+docker compose -f deploy/docker-compose.yml up -d ui      # beside the Compose jobs, on their store
+```
+
+Both only read the store, so they can run beside a process that is recording. The Docker image serves a demo store (`scripts/make_demo_db.py`: recordings, a replay, an edited fork, a diagnosed failure and a crashed-then-resumed refund) with `--immutable`, which needs no write access at all. `tests/conformance.py` sends both servers the same requests over one store and checks they answer identically.
+
+To work on the UI (`ui/`, SvelteKit with Svelte 5; Node 22.17 or newer, `ui/.nvmrc` says 24), run a server on port 8700, then `npm run dev` in `ui/`, which forwards API calls to it. `make ui` builds the UI into both servers, `make test` runs the Python, Go and UI tests, and `scripts/gen_proto.sh` regenerates the Python, Go and TypeScript code from `proto/`.
+
 ## Try it
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.11 to 3.13.
@@ -532,12 +553,17 @@ docker compose -f deploy/docker-compose.yml run --rm replay
 | Path | What |
 | --- | --- |
 | `proto/events.proto` | Event schema (`ledger.v1`). Regenerate with `scripts/gen_proto.sh` |
+| `proto/trace_service.proto` | The trace API both servers answer |
+| `server/` | `ledger-server`: the Go trace server (connect-go, pure-Go SQLite) with the UI embedded |
+| `ui/` | The trace UI: runs, timeline, diff and blame views |
+| `scripts/make_demo_db.py` | Builds a demo store with one of each kind of run |
 | `ledger/core/` | Canonical payloads, SQLite WAL event store, blob store, request normalization, clock/uuid/rng shims, sessions and step keys |
 | `ledger/intercept/` | OpenAI client wrapper, `@tool`, LangGraph `instrument` |
 | `ledger/replay/` | Replay index, divergence detection, `replay`, `fork` with `steps`, and `resume` |
 | `ledger/blame/` | `diagnose`: counterfactual blame by bisection over forked replays |
 | `ledger/effects/` | `@ledger.effect`: idempotency keys, write-ahead pending/confirmed records, retries; sagas |
-| `ledger/cli.py` | The `ledger` command: `record`, `replay`, `fork`, `resume`, `steps`, `runs` |
+| `ledger/cli.py` | The `ledger` command: `record`, `replay`, `fork`, `resume`, `diagnose`, `steps`, `runs`, `ui` |
+| `ledger/ui/` | `ledger ui`: the trace API over Connect with JSON, and the built UI |
 | `ledger/testing/fake_llm.py` | Nondeterministic fake LLM and search server |
 | `ledger/testing/faults.py` | Fault injection into recordings, with the guilty step as ground truth |
 | `ledger/testing/fake_stripe.py` | Fake Stripe API (charges, refunds, idempotency keys) with injectable faults |
@@ -549,7 +575,8 @@ docker compose -f deploy/docker-compose.yml run --rm replay
 | `bench/blame_eval.py` | Blame benchmark: injected faults, scored for `diagnose`, a rerun scan, random pick and an LLM judge |
 | `bench/who_and_when.py` | Who&When: download, loader, and log-only methods (random, an LLM judge) scored on it |
 | `bench/overhead.py` | Overhead benchmark: added latency per step with Ledger recording and replaying |
-| `deploy/` | Dockerfile and Compose file |
+| `deploy/` | Dockerfiles (worker; trace server with the demo store) and the Compose file |
+| `Makefile` | `make ui`, `server`, `demo`, `dist`, `test`, `image` |
 
 Payloads are stored as canonical JSON inside protobuf events, because protobuf serialization is not canonical and would break content hashing.
 
