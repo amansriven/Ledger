@@ -27,6 +27,17 @@ def test_append_assigns_contiguous_indexes(store):
     assert [e.index for e in store.events("run-b")] == [0]
 
 
+def test_run_ids_by_prefix_match_the_full_listing(store):
+    ids = ["r", "r.replay-1", "r.replay-2", "r.replay-1.fork-1", "rx.replay-1", "q", "r.replay-"]
+    for run_id in ids:
+        for i in range(2):
+            store.append(run_id, _tool_event(i))
+    for prefix in ("r.replay-", "r", "rx", "s", ""):
+        assert sorted(store.run_ids_with_prefix(prefix)) == sorted(
+            r for r in store.run_ids() if r.startswith(prefix)
+        )
+
+
 def test_concurrent_appends_have_no_gaps(store):
     def worker(offset: int) -> None:
         for i in range(50):

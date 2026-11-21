@@ -62,3 +62,25 @@ def test_a_tampered_recording_is_not_identical(tmp_path):
             toy.TONES = original
         assert not result.identical and "ReplayMismatch" in result.reason
         assert bench.replay_ledger(graph, store, run_id).identical
+
+
+def test_the_overhead_benchmark_measures_every_mode(tmp_path):
+    from bench import overhead
+
+    out = tmp_path / "overhead.json"
+    assert overhead.main(["--runs", "6", "--warmup", "1", "--data", str(tmp_path / "data"),
+                          "--out", str(out)]) == 0
+
+    s = json.loads(out.read_text())["summary"]
+    assert s["replays_not_identical"] == 0
+    assert s["calls_per_run"] == 8  # 5 LLM, 3 tool
+    assert s["events_per_run"]["p50"] == 13  # plus 3 nondet reads, start and finish
+    assert s["log_kb"]["p50"] > 0
+    for mode in overhead.MODES:
+        assert 0 < s["run_ms"][mode]["p50"] <= s["run_ms"][mode]["p95"]
+        assert s["per_step_ms"][mode]["p50"] == pytest.approx(s["run_ms"][mode]["p50"] / 5, abs=0.01)
+    for mode in ("record", "replay"):
+        added = s["added"][mode]["p50"]
+        assert added["run_ms"] == pytest.approx(
+            s["run_ms"][mode]["p50"] - s["run_ms"]["off"]["p50"], abs=0.01)
+        assert added["per_call_ms"] == pytest.approx(added["run_ms"] / 8, abs=0.01)
