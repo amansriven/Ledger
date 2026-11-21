@@ -282,15 +282,25 @@ def ok(out) -> bool:                          # what success means for this grap
 d = ledger.diagnose(run_id, graph, ok)
 d.step                                        # StepInfo of the decisive step, or None
 d.steps, d.complete                           # every step needed, and whether rerunning them alone fixed it
-d.forks, d.live_calls                         # what the diagnosis cost
+d.forks, d.live_calls, d.dollars              # what the diagnosis cost
+d.status                                      # "found", "no_step", "budget" or "inconsistent"
+
+ledger.diagnose(run_id, graph, ok, repeats=5, threshold=0,           # noisy reruns
+                budget=ledger.blame.Budget(forks=30, dollars=0.25),
+                pricing=ledger.blame.Pricing(input_per_mtok=0.15, output_per_mtok=0.60))
 ```
 
-Rerunning from step k redraws every call from k on in log order and replays the ones before it from the log at no cost. If that fixes the run and rerunning from the next step doesn't, k's recorded outcome is needed for the failure. That is the decisive step as [Who&When](https://arxiv.org/abs/2505.00212) defines it: the earliest step whose correction turns failure into success. With one bad step, rerunning from k fixes the run for every k up to it and none after, so a binary search finds it. On n calls that takes 1 fork to check that rerunning everything fixes the run, about log2(n) to find the step, and 1 to check that rerunning the step alone (with what depends on it) is enough. On the 11-call toy pipeline that is at most 6 forks.
+Rerunning from step k redraws every call from k on in log order and replays the ones before it from the log at no cost. If that fixes the run and rerunning from the next step doesn't, k's recorded outcome is needed for the failure. That is the decisive step as [Who&When](https://arxiv.org/abs/2505.00212) defines it: the earliest step whose correction turns failure into success. With one bad step, rerunning from k fixes the run for every k up to it and none after, so the step can be searched for.
+
+Live calls are what a counterfactual costs, so the search starts at the end. It reruns the last call, then the last 2, 4, 8 and so on until a rerun fixes the run, then bisects inside the last gap. A step d calls from the end takes about 2·log2(d) forks, and none of them reruns much more than 2d calls. One more fork checks that rerunning the step alone (with what depends on it) is enough. It's skipped when every later call depends on the step, since the fork that found it already was that check. Rerunning everything is tried only when nothing shorter fixes the run.
 
 - **Several bad steps:** if the first step found isn't enough alone, the search goes on over the steps after it, with the found ones always rerun.
 - **No step:** if rerunning everything still fails, `d.step` is None. The cause is then in the code or the input, or the failure comes back whenever its step is redrawn.
 - **Candidates:** LLM calls, tool calls, and clock, uuid and rng reads. Effects are not candidates, and a fork that would run one live raises `LiveEffectRefused` unless `live_effects=True`.
-- **Noise:** `repeats=n` runs each counterfactual n times and counts it as a fix when more than half pass. Confidence intervals and a budget per diagnosis come in week 7.
+- **Noise:** `repeats=n` runs each counterfactual up to n times. It counts as a fix when more than `threshold` of the runs pass, and it stops as soon as that's settled. Each counterfactual reports its pass rate with a 95% Wilson interval.
+  - The default threshold, 0.5, is a majority vote. That suits runs that sometimes pass even with the fault kept.
+  - When they essentially never do, and noise only makes good runs fail, use `threshold=0`: one pass is enough. That covers a flaky call later on, or a model that repeats its mistake when redrawn. There a real fix can pass well under half the time.
+- **Budget:** `budget` caps forks, live calls or dollars per diagnosis. Dollars come from the token usage the live LLM calls report, priced by `pricing`. A diagnosis that runs out ends with status `"budget"`: it keeps the steps found so far, and `d.narrowed` lists the candidates the step it was looking for must be among.
 
 `ledger.testing.faults` makes failed runs with a known cause. It corrupts the outcome of one call of a recording and keeps the step it hit as ground truth. The corrupted outcome is logged as the call's own, so the log looks like any recording and nothing in it gives the answer away:
 
