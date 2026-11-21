@@ -17,8 +17,8 @@ langgraph
     checkpointer (``durability="sync"``) in ``DIR/langgraph.db``, one thread
     per ticket, and node retries on every node including the refund. On
     start, a ticket with no checkpoint is invoked; one whose thread has
-    nodes left (cut off, or failed) is invoked again from its last
-    checkpoint, which reruns the node that was cut off. A ticket that fails
+    tasks left (cut off, or failed; see ``thread_finished``) is invoked again
+    from its last checkpoint, which reruns the node that was cut off. A ticket that fails
     five times is given up (``DIR/langgraph-attempts.json``).
 
 Each start and each ticket finished after a restart is appended to
@@ -118,6 +118,17 @@ def ledger_pass(data: Path, events: Events, tickets: list[dict[str, Any]]) -> in
 # ---------------------------------------------------------------- baseline
 
 
+def thread_finished(state: Any) -> bool:
+    """Whether a checkpointed LangGraph thread ran to the end.
+
+    ``state.next`` alone can't tell. It leaves out tasks whose writes were
+    saved, and a kill after a task's writes but before the next checkpoint
+    leaves exactly that: ``next`` is empty, the task is still in
+    ``state.tasks``, and invoking the thread again carries on from it.
+    """
+    return state.created_at is not None and not state.tasks
+
+
 def langgraph_pass(data: Path, events: Events, tickets: list[dict[str, Any]]) -> int:
     """One pass over the tickets with stock LangGraph. Returns how many are not settled."""
     from langgraph.checkpoint.sqlite import SqliteSaver
@@ -141,8 +152,8 @@ def langgraph_pass(data: Path, events: Events, tickets: list[dict[str, Any]]) ->
             config = {"configurable": {"thread_id": tid}}
             state = app.get_state(config)
             started = state.created_at is not None
-            if started and not state.next:
-                continue  # finished
+            if started and thread_finished(state):
+                continue
             outcome = "ok"
             try:
                 app.invoke(None if started else ticket, config, durability="sync")

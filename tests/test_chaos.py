@@ -82,6 +82,45 @@ def test_resume_times_are_measured_from_each_restart(tmp_path):
     assert harness.resume_times(events, [10.0, 15.0, 20.0]) == pytest.approx([0.5, 0.2])
 
 
+def test_a_thread_killed_between_writes_and_checkpoint_is_not_finished():
+    """The baseline worker's check: ``next`` is empty there, but a task is left."""
+    import sqlite3
+    from typing import TypedDict
+
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    from langgraph.graph import END, START, StateGraph
+
+    class S(TypedDict, total=False):
+        a: int
+        b: int
+        c: int
+
+    b = StateGraph(S)
+    b.add_node("one", lambda s: {"a": 1})
+    b.add_node("two", lambda s: {"b": 2})
+    b.add_node("three", lambda s: {"c": 3})
+    b.add_edge(START, "one")
+    b.add_edge("one", "two")
+    b.add_edge("two", "three")
+    b.add_edge("three", END)
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    app = b.compile(checkpointer=SqliteSaver(conn))
+    config = {"configurable": {"thread_id": "t"}}
+    app.invoke({}, config, durability="sync")
+    assert worker.thread_finished(app.get_state(config))
+
+    # Kill it after node two's writes were saved, before the checkpoint after them.
+    later = [h.config["configurable"]["checkpoint_id"] for h in app.get_state_history(config)
+             if h.metadata["step"] > 1]
+    conn.executemany("delete from checkpoints where checkpoint_id = ?", [(c,) for c in later])
+    state = app.get_state(config)
+    assert state.next == () and [t.name for t in state.tasks] == ["two"]
+    assert not worker.thread_finished(state)
+
+    assert app.invoke(None, config, durability="sync") == {"a": 1, "b": 2, "c": 3}
+    assert worker.thread_finished(app.get_state(config))
+
+
 @pytest.mark.parametrize("system", ["ledger", "langgraph"])
 def test_a_short_local_session_settles_every_ticket(tmp_path, monkeypatch, system):
     monkeypatch.setattr(harness, "WORK", tmp_path / "work")
