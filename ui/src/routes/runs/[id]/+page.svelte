@@ -25,6 +25,13 @@
 	let error = $state('');
 	let missing = $state(false);
 	let selected = $state<Bar | undefined>();
+	let diagnosed = $state(false);
+
+	$effect(() => {
+		const id = runId;
+		diagnosed = false;
+		api.listDiagnoses({ runId: id }).then((r) => (diagnosed = r.diagnoses.length > 0)).catch(() => {});
+	});
 
 	// Follow the run: its backlog, then each event as it's logged, until it
 	// finishes. Events are added once per frame, not one by one.
@@ -89,6 +96,7 @@
 			<span class="badge {status}">{status === 'unfinished' && watching ? 'running' : status}</span>
 		{/if}
 		{#if watching && events.length}<span class="live-dot" title="following new events">live</span>{/if}
+		{#if diagnosed}<a class="badge error" href="/runs/{runId}/blame">blame: see which call broke it</a>{/if}
 	</div>
 	<div class="facts muted">
 		{#if started?.sourceRunId}

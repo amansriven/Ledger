@@ -53,7 +53,7 @@
 		<td class="num">{r.live}</td>
 		<td class="num">{#if r.diverged > 0}<span class="badge diverged">{r.diverged}</span>{/if}</td>
 		<td>
-			{#if r.diagnoses > 0}<span class="badge error" title="saved by ledger diagnose">diagnosed</span>{/if}
+			{#if r.diagnoses > 0}<a class="badge error" href="/runs/{r.runId}/blame" title="See which call broke it (ledger diagnose)">blame</a>{/if}
 		</td>
 		<td class="graph mono muted" title={r.graph}>{r.graph.split(':')[0].split('.').at(-1) ?? ''}</td>
 		<td class="muted nowrap">{r.startedAt ? ago(ms(r.startedAt), now) : ''}</td>
