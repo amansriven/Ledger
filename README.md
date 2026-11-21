@@ -2,7 +2,7 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay) done; M2 (exactly-once effects) under way, week 5.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets; in the first sessions Ledger made no duplicate refund where stock LangGraph made several. The 10,000-run sessions come next; blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay) done; M2 (exactly-once effects) under way, week 5.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. The overhead benchmark comes next; blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
 
 ## Integration
 
@@ -220,7 +220,18 @@ caffeinate -i uv run python -m chaos.harness --mode docker --runs 10000   # dock
 
 In local mode the fake Stripe server loses a request now and then: dropped before it's applied, dropped after (the answer is lost), or answered with a 500. Docker mode (`chaos/docker-compose.yml`) puts Toxiproxy between the worker container and Stripe, and cuts 3% of connections in each direction with a `timeout` toxic. Results go to `chaos/results/`. The harness exits 0 only if Ledger breaks no invariant.
 
-First sessions, on an Apple-silicon Mac:
+**M2 gate passed: 0 duplicate charges in 10,000 crash-injected runs.** Docker mode, 10,000 tickets per system, on an Apple-silicon Mac (`chaos/results/docker.json`):
+
+| System | Tickets | Kills | Refunds | Duplicate | Missing | Unlogged / phantom / unfinished | Resume p50 / p95 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Ledger | 10,000 | 558 | 8,988 | **0** | 0 | 0 / 0 / 0 | 0.46 / 0.99 s |
+| stock LangGraph | 10,000 | 626 | 9,167 | **182** | 0 | n/a | 0.65 / 1.16 s |
+
+Every refund the baseline made twice came from rerunning the refund node: after a kill, from the last checkpoint, or after a lost answer, by the node retry. Each rerun sends a new request with a new idempotency key. Ledger's retries and resumes reuse the key from the run and step, and the reconcile lookup settles a refund whose answer was lost. Resume time runs from a restart to the first cut-off ticket finishing, including container and process start. Each session took about half an hour.
+
+The baseline counts a thread as finished when `get_state` has no tasks left. `state.next` alone isn't enough: a kill after a node's writes are saved, but before the next checkpoint, leaves `next` empty with a task still pending, and invoking the thread again carries on from it. An earlier baseline run that checked `next` skipped 7 such tickets; it was rerun with the fix.
+
+Shorter sessions from development, with the same settings:
 
 | Session | System | Tickets | Kills | Refunds | Duplicate | Missing | Unlogged or unfinished |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -229,7 +240,7 @@ First sessions, on an Apple-silicon Mac:
 | Docker, Toxiproxy 3% | Ledger | 300 | 14 | 266 | **0** | 0 | 0 |
 | | stock LangGraph | 300 | 16 | 272 | **5** | 0 | n/a |
 
-The 10,000-run sessions for the M2 gate (0 duplicate charges) come next. A Mac that sleeps pauses the whole session, so run it under `caffeinate`.
+A Mac that sleeps pauses the whole session. On battery `caffeinate -i` didn't stop it sleeping, so keep the Mac plugged in, or awake with the lid open.
 
 ## Clock, ids and randomness
 
