@@ -570,7 +570,7 @@ def replay_session(
             raise KeyError(f"no recorded run {source_run_id!r} in {store.path}")
         if run_id is None:
             prefix = f"{source_run_id}.{mode.value}-"
-            n = sum(1 for r in store.run_ids() if r.startswith(prefix))
+            n = len(store.run_ids_with_prefix(prefix))
             run_id = f"{prefix}{n + 1}"
         session = Session(
             store, run_id, mode, source_run_id=source_run_id, replay_index=index

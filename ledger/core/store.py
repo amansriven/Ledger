@@ -222,6 +222,19 @@ class EventStore:
             started.append((ev.recorded_at.ToNanoseconds(), run_id))
         return [r for _, r in sorted(started)]
 
+    def run_ids_with_prefix(self, prefix: str) -> list[str]:
+        """Run ids that start with ``prefix``, from the primary key alone.
+
+        Unlike ``run_ids`` it parses no events, so its cost doesn't grow with
+        the number of other runs in the store.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT run_id FROM events WHERE run_id >= ? AND run_id < ? AND idx = 0",
+                (prefix, prefix + "\U0010ffff"),
+            ).fetchall()
+        return [r for (r,) in rows]
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()
