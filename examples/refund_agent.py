@@ -35,8 +35,10 @@ import urllib.request
 from pathlib import Path
 from typing import Any, TypedDict
 
+import openai
 import stripe
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import RetryPolicy
 from openai import OpenAI
 
 import ledger
@@ -54,6 +56,13 @@ ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 # with the same idempotency key is safe. Anything else (a declined or invalid
 # request) means it was not made.
 IN_DOUBT = (stripe.APIConnectionError, stripe.APIError, stripe.RateLimitError)
+
+# Errors worth retrying a read-only node for: the charge lookup and the reply.
+TRANSIENT = IN_DOUBT + (
+    openai.APIConnectionError, openai.APITimeoutError, openai.InternalServerError,
+    openai.RateLimitError,
+)
+READ_RETRY = RetryPolicy(initial_interval=0.05, max_attempts=4, retry_on=TRANSIENT)
 
 
 class Ticket(TypedDict, total=False):
@@ -125,8 +134,17 @@ def decide(ticket: Ticket, charge: dict[str, Any]) -> dict[str, Any]:
     return {"refund": True, "amount": amount, "why": "within policy"}
 
 
-def build_builder(llm: Any, client: stripe.StripeClient, *, model: str) -> StateGraph:
-    """The agent, uncompiled. ``llm`` should be wrapped with ``ledger.wrap``."""
+def build_builder(
+    llm: Any, client: stripe.StripeClient, *, model: str, retry_refund: bool = False
+) -> StateGraph:
+    """The agent, uncompiled. ``llm`` should be wrapped with ``ledger.wrap``.
+
+    The read-only nodes (``lookup``, ``reply``) are retried on transient
+    errors. ``refund`` is not: its effects retry with their idempotency
+    keys, and rerunning the node would make new ones. ``retry_refund`` gives
+    it the same node retry anyway, the naive setup the chaos benchmark's
+    baseline uses (run without Ledger, each attempt gets a fresh key).
+    """
 
     @ledger.tool(name="stripe.charges.retrieve")
     def get_charge(charge_id: str) -> dict[str, Any]:
@@ -210,10 +228,10 @@ def build_builder(llm: Any, client: stripe.StripeClient, *, model: str) -> State
         return {"reply": resp.choices[0].message.content or ""}
 
     b = StateGraph(Ticket)
-    b.add_node("lookup", lookup)
+    b.add_node("lookup", lookup, retry_policy=READ_RETRY)
     b.add_node("decide", decide_node)
-    b.add_node("refund", refund)
-    b.add_node("reply", reply)
+    b.add_node("refund", refund, retry_policy=READ_RETRY if retry_refund else None)
+    b.add_node("reply", reply, retry_policy=READ_RETRY)
     b.add_edge(START, "lookup")
     b.add_edge("lookup", "decide")
     b.add_edge("decide", "refund")
@@ -232,6 +250,11 @@ def graph_from_env() -> InstrumentedGraph:
     Stripe as ``stripe_settings`` reads it (the fake server on :12111 unless
     ``STRIPE_API_BASE`` is empty), plus the LLM settings the toy pipeline uses.
     """
+    return ledger.instrument(builder_from_env().compile())
+
+
+def builder_from_env(*, retry_refund: bool = False) -> StateGraph:
+    """``build_builder`` wired from the environment, as ``graph_from_env`` reads it."""
     llm = ledger.wrap(
         OpenAI(
             base_url=os.environ.get("OPENAI_BASE_URL", "http://127.0.0.1:8787/v1"),
@@ -240,7 +263,9 @@ def graph_from_env() -> InstrumentedGraph:
         )
     )
     client = stripe_client(*stripe_settings())
-    return build_graph(llm, client, model=os.environ.get("LEDGER_MODEL", "fake-model"))
+    return build_builder(
+        llm, client, model=os.environ.get("LEDGER_MODEL", "fake-model"), retry_refund=retry_refund
+    )
 
 
 def main() -> int:

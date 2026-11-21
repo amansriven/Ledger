@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from openai import OpenAI
 
 import ledger
 from examples import refund_agent
@@ -156,6 +157,29 @@ def test_policy_sends_big_refunds_to_a_human(agent, stripe_server, store):
         out = agent.invoke(ticket(charge))
     assert out["refund"] is None and "human" in out["decision"]["why"]
     assert stripe_server.refunds_of(charge["id"]) == []
+
+
+def test_a_lookup_cut_off_is_retried_by_the_node(agent, stripe_server, store):
+    charge = stripe_server.create_charge(1000)
+    stripe_server.add_fault("/v1/charges/*", "drop_before", count=2)
+    assert stripe_server.state()["faults_pending"] == 2
+    with ledger.record(store):
+        out = agent.invoke(ticket(charge))
+
+    assert stripe_server.state()["faults_pending"] == 0
+    assert len(stripe_server.refunds_of(charge["id"])) == 1 and out["reply"]
+
+
+def test_without_ledger_a_node_retry_refunds_twice(fake_server, stripe_server):
+    """Why ``refund`` gets no node retry: the chaos baseline's failure, in one run."""
+    llm = OpenAI(base_url=f"{fake_server.base_url}/v1", api_key="x", max_retries=0)
+    client = refund_agent.stripe_client("sk_test_fake", stripe_server.base_url)
+    app = refund_agent.build_builder(llm, client, model="fake-model", retry_refund=True).compile()
+    charge = stripe_server.create_charge(3000)
+    stripe_server.add_fault("/v1/refunds", "drop_after")  # applied, answer lost
+    app.invoke(ticket(charge, amount=1000))
+
+    assert len(stripe_server.refunds_of(charge["id"])) == 2
 
 
 def test_live_keys_are_refused():

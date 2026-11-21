@@ -1,0 +1,99 @@
+{
+ "benchmark": "exactly_once_chaos",
+ "mode": "docker",
+ "date": "2026-11-21T03:14:29+00:00",
+ "args": {
+  "mode": "docker",
+  "system": "both",
+  "runs": 10000,
+  "seed": 10000,
+  "kill_after": [
+   1.5,
+   4.0
+  ],
+  "fault_rate": 0.5,
+  "toxicity": 0.03,
+  "max_restarts": 100000,
+  "keep": false
+ },
+ "note": "stock LangGraph rerun on its own after a fix to the worker's finished check (thread_finished); same seed and settings",
+ "sessions": [
+  {
+   "system": "ledger",
+   "runs": 10000,
+   "kills": 558,
+   "restarts": 558,
+   "wall_seconds": 1687.1,
+   "faults": null,
+   "report": {
+    "system": "ledger",
+    "tickets": 10000,
+    "refunds": 8988,
+    "duplicate": 0,
+    "missing": 0,
+    "unlogged": 0,
+    "phantom": 0,
+    "unfinished": 0,
+    "examples": {},
+    "ok": true
+   },
+   "resume_seconds": {
+    "p50": 0.462,
+    "p95": 0.986,
+    "max": 3.564,
+    "mean": 0.54
+   },
+   "resumes": 481,
+   "date": "2026-11-21T02:41:14+00:00"
+  },
+  {
+   "system": "langgraph",
+   "runs": 10000,
+   "kills": 626,
+   "restarts": 626,
+   "wall_seconds": 1883.2,
+   "faults": null,
+   "report": {
+    "system": "langgraph",
+    "tickets": 10000,
+    "refunds": 9167,
+    "duplicate": 182,
+    "missing": 0,
+    "unlogged": 0,
+    "phantom": 0,
+    "unfinished": 0,
+    "examples": {
+     "L00047": "2 refunds, expected 1",
+     "L00065": "2 refunds, expected 1",
+     "L00079": "2 refunds, expected 1",
+     "L00132": "2 refunds, expected 1",
+     "L00158": "2 refunds, expected 1",
+     "L00201": "2 refunds, expected 1",
+     "L00250": "2 refunds, expected 1",
+     "L00290": "2 refunds, expected 1",
+     "L00367": "2 refunds, expected 1",
+     "L00402": "2 refunds, expected 1",
+     "L00461": "2 refunds, expected 1",
+     "L00541": "2 refunds, expected 1",
+     "L00602": "2 refunds, expected 1",
+     "L00677": "2 refunds, expected 1",
+     "L00921": "2 refunds, expected 1",
+     "L00945": "2 refunds, expected 1",
+     "L01015": "2 refunds, expected 1",
+     "L01053": "2 refunds, expected 1",
+     "L01143": "2 refunds, expected 1",
+     "L01258": "2 refunds, expected 1"
+    },
+    "ok": false
+   },
+   "resume_seconds": {
+    "p50": 0.649,
+    "p95": 1.159,
+    "max": 3.393,
+    "mean": 0.707
+   },
+   "resumes": 614,
+   "date": "2026-11-21T03:14:29+00:00"
+  }
+ ]
+}
