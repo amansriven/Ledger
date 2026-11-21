@@ -2,7 +2,7 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay) done; M2 (exactly-once effects) under way, week 4.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. The week-5 chaos harness and benchmark come next; blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay) done; M2 (exactly-once effects) under way, week 5.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets; in the first sessions Ledger made no duplicate refund where stock LangGraph made several. The 10,000-run sessions come next; blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
 
 ## Integration
 
@@ -201,6 +201,36 @@ uv run python -m examples.refund_agent          # seeds a charge, records one re
 - a crash after each event of the compensation phase is resumed without undoing anything twice;
 - async compensations work.
 
+## Chaos benchmark
+
+`chaos/` attacks the refund agent from outside. The harness works through a list of refund tickets with a worker process, kills the worker at random moments with SIGKILL, restarts it, and cuts its network to Stripe. Then it checks what Stripe holds. Two systems run the same agent code against the same faults:
+
+- **Ledger:** one run per ticket (`ticket-<id>`). A restarted worker resumes every run that was cut off or left an effect pending (`ledger.resume`).
+- **Stock LangGraph:** a `SqliteSaver` checkpointer with `durability="sync"`, one thread per ticket, and node retries on every node including the refund. A restarted worker invokes unfinished threads again from their last checkpoint. Without Ledger, each refund attempt gets a fresh idempotency key, as with a client that makes one per request.
+
+Each ticket asks for a partial refund of its own fresh charge. That way Stripe would accept a second refund, so a duplicate is possible, as in real use. About one ticket in ten is over the automatic limit and expects no refund. The invariants (`chaos/invariants.py`):
+- **duplicate:** refunds beyond the one expected;
+- **missing:** an expected refund that isn't at Stripe at the end;
+- for Ledger, the log is also reconciled against Stripe: **unlogged** (a refund at Stripe that no confirmed effect in the log carries), **phantom** (the reverse), and **unfinished** (a run that didn't settle).
+
+```sh
+uv run python -m chaos.harness --mode local --runs 500          # kill -9 a subprocess; fake Stripe drops requests
+caffeinate -i uv run python -m chaos.harness --mode docker --runs 10000   # docker kill; Toxiproxy cuts connections
+```
+
+In local mode the fake Stripe server loses a request now and then: dropped before it's applied, dropped after (the answer is lost), or answered with a 500. Docker mode (`chaos/docker-compose.yml`) puts Toxiproxy between the worker container and Stripe, and cuts 3% of connections in each direction with a `timeout` toxic. Results go to `chaos/results/`. The harness exits 0 only if Ledger breaks no invariant.
+
+First sessions, on an Apple-silicon Mac:
+
+| Session | System | Tickets | Kills | Refunds | Duplicate | Missing | Unlogged or unfinished |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| local, 91 / 124 lost requests | Ledger | 500 | 8 | 445 | **0** | 0 | 0 |
+| | stock LangGraph | 500 | 27 | 462 | **10** | 0 | n/a |
+| Docker, Toxiproxy 3% | Ledger | 300 | 14 | 266 | **0** | 0 | 0 |
+| | stock LangGraph | 300 | 16 | 272 | **5** | 0 | n/a |
+
+The 10,000-run sessions for the M2 gate (0 duplicate charges) come next. A Mac that sleeps pauses the whole session, so run it under `caffeinate`.
+
 ## Clock, ids and randomness
 
 `ledger.time()`, `ledger.now()`, `ledger.uuid4()` and `ledger.rng()` read live values while recording and logged values while replaying; outside a session they behave like the stdlib. `ledger.rng()` logs one seed per task and returns a `random.Random`, so any number of draws costs one event. They are explicit calls, not patches of `time`, `uuid` and `random`, because LangGraph, httpx and the OpenAI client read the clock too, a varying number of times per run.
@@ -257,6 +287,7 @@ docker compose -f deploy/docker-compose.yml run --rm replay
 | `ledger/testing/fake_llm.py` | Nondeterministic fake LLM and search server |
 | `ledger/testing/fake_stripe.py` | Fake Stripe API (charges, refunds, idempotency keys) with injectable faults |
 | `examples/refund_agent.py` | Support-ticket refund agent; the M2 workload |
+| `chaos/` | Chaos benchmark: worker, harness (local `kill -9` or `docker kill` with Toxiproxy), invariants |
 | `examples/toy_pipeline.py` | 5-node pipeline with a 3-way parallel fan-out |
 | `bench/replay_fidelity.py` | Replay-fidelity benchmark against LangGraph checkpoint replay; results in `bench/results/` |
 | `deploy/` | Dockerfile and Compose file |
