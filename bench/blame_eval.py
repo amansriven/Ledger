@@ -68,7 +68,7 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -399,14 +399,21 @@ class Spend:
         return self.cap is not None and self.total >= self.cap
 
 
+def in_order(steps: Iterable[Any]) -> list[Any]:
+    """Calls sorted by superstep, node and seq. Log order isn't fixed: calls of
+    nodes that run in parallel land in the log in whatever order their threads
+    reach it, so a pick by position in the log could differ between reruns."""
+    return sorted(steps, key=lambda s: (s.superstep, s.node, s.seq, s.key))
+
+
 def run_workload(w: Workload, runs: int, seed: int, repeats: int, threshold: float,
                  budget: Budget, store: ledger.EventStore, judge_cfg: dict[str, Any] | None,
                  methods: tuple[str, ...], spend: Spend | None = None,
                  workers: int = 1) -> dict[str, Any]:
     """Run ``runs`` trials, ``workers`` at a time. Each trial draws its fault
-    from its own seed, so which faults are injected doesn't depend on timing.
-    Noise (``--recur``, ``--flake``) shares one generator, so it runs one
-    trial at a time."""
+    and its random pick from its own seeds, over calls in a fixed order (see
+    ``in_order``), so neither depends on timing. Noise (``--recur``,
+    ``--flake``) shares one generator, so it runs one trial at a time."""
     spend = spend or Spend()
     if w.noise.recur or w.noise.flake:
         workers = 1
@@ -436,7 +443,8 @@ def run_workload(w: Workload, runs: int, seed: int, repeats: int, threshold: flo
         if not ok:
             count("clean_failed")  # failed with no fault: no ground truth
             return
-        eligible = [s for s in ledger.steps(clean.run_id, store) if s.kind in w.fault_kinds]
+        eligible = in_order(s for s in ledger.steps(clean.run_id, store)
+                            if s.kind in w.fault_kinds)
         target = rnd.choice(eligible)
         fault = faults.Fault(key=target.key, corrupt=w.fault(target.kind, rnd))
         with ledger.record(store) as rec, faults.inject(fault):
@@ -468,8 +476,8 @@ def run_workload(w: Workload, runs: int, seed: int, repeats: int, threshold: flo
             score("scan", step, step.node if step else None, forks=forks, live=live,
                   dollars=dollars)
         if "random" in tallies:
-            calls = [s for s in ledger.steps(rec.run_id, store) if s.kind in STEP_KINDS]
-            pick = rnd.choice(calls)
+            calls = in_order(s for s in ledger.steps(rec.run_id, store) if s.kind in STEP_KINDS)
+            pick = random.Random(f"{seed}-{i}-random").choice(calls)
             score("random", pick, pick.node)
         if "judge" in tallies and judge_cfg:
             try:

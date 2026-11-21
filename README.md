@@ -342,7 +342,7 @@ In the tests, one fault at each of the 8 calls of a parallel tool graph and at t
 - **random:** a random LLM or tool call.
 - **judge:** an LLM reading the whole trace and naming the step, like Who&When's all-at-once method. It runs only when given a model (`--judge-model`, `--judge-base-url`, and a key in `LEDGER_JUDGE_API_KEY` or `OPENAI_API_KEY`, from the environment or `.env`).
 
-Step accuracy counts the exact step; agent accuracy counts its node. Accuracy intervals are 95% Wilson; costs are means per diagnosis. Each trial draws its fault from its own seed, so `--workers N` runs trials in parallel without changing which faults are drawn.
+Step accuracy counts the exact step; agent accuracy counts its node. Accuracy intervals are 95% Wilson; costs are means per diagnosis. Each trial draws its fault and its random pick from its own seeds, over the calls in a fixed order rather than log order (calls of parallel nodes reach the log in thread order), so `--workers N` runs trials in parallel without changing which faults are drawn or what `random` picks. Fork and live-call counts can still differ a little between runs, since `diagnose` bisects in log order.
 
 ### On a real model
 
@@ -390,18 +390,20 @@ What this does not show:
 ### On the fake server
 
 ```bash
-python -m bench.blame_eval --runs 100 --workers 4
+python -m bench.blame_eval --runs 100
 ```
+
+It runs one trial at a time: with several workers the fake server resets some connections (its listen backlog is the stdlib default of 5), and a reset counts as a failed run or a failed fork.
 
 On clean reruns, where a redrawn call never repeats the fault, there are 100 runs per workload:
 
 | Workload | ledger step acc | scan step acc | random step acc | ledger forks | scan forks | ledger live calls | scan live calls |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| toy | 1.00 (0.96–1.00) | 1.00 | 0.11 | 4.6 | 4.8 | 13.8 | 9.0 |
-| chain-8 | 1.00 (0.96–1.00) | 1.00 | 0.10 | 4.6 | 4.8 | 18.0 | 16.6 |
-| chain-16 | 1.00 (0.96–1.00) | 1.00 | 0.04 | 6.5 | 9.2 | 45.5 | 57.6 |
-| chain-32 | 1.00 (0.96–1.00) | 1.00 | 0.02 | 8.5 | 18.1 | 109.5 | 214.4 |
-| chain-64 | 1.00 (0.96–1.00) | 1.00 | 0.00 | 10.5 | 35.7 | 255.2 | 821.5 |
+| toy | 1.00 (0.96–1.00) | 1.00 | 0.09 | 4.8 | 4.9 | 14.8 | 9.3 |
+| chain-8 | 1.00 (0.96–1.00) | 1.00 | 0.11 | 4.6 | 4.8 | 18.0 | 16.6 |
+| chain-16 | 1.00 (0.96–1.00) | 1.00 | 0.07 | 6.5 | 9.2 | 45.5 | 57.6 |
+| chain-32 | 1.00 (0.96–1.00) | 1.00 | 0.04 | 8.5 | 18.1 | 109.5 | 214.4 |
+| chain-64 | 1.00 (0.96–1.00) | 1.00 | 0.01 | 10.5 | 35.7 | 255.2 | 821.5 |
 
 The workloads:
 
@@ -418,9 +420,9 @@ What the table shows:
 
 | Workload | ledger step acc | scan step acc | ledger forks | scan forks | ledger live calls | scan live calls |
 | --- | --- | --- | --- | --- | --- | --- |
-| toy | 0.97 (0.92–0.99) | 0.99 (0.95–1.00) | 16.9 | 21.1 | 44.2 | 37.0 |
+| toy | 0.97 (0.92–0.99) | 0.99 (0.95–1.00) | 16.8 | 20.5 | 44.0 | 35.4 |
 | chain-16 | 0.81 (0.72–0.88) | 0.96 (0.90–0.98) | 26.4 | 43.2 | 163.4 | 260.9 |
-| chain-64 | 0.19 (0.13–0.28) | 0.55 (0.45–0.64) | 37.1 | 182.8 | 691.5 | 4,371.5 |
+| chain-64 | 0.19 (0.13–0.28) | 0.55 (0.45–0.64) | 37.1 | 182.8 | 691.5 | 4,371.4 |
 
 Noise costs `ledger` more accuracy than `scan`. A bisection has several forks that must pass, and each can fail for no reason, so each is a chance to go wrong; `scan` has only one fork that must pass. At 64 steps both break down, because a rerun of 64 calls at 5% flake each comes out clean about 4% of the time.
 

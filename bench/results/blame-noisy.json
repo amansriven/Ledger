@@ -1,6 +1,6 @@
 {
  "benchmark": "blame",
- "date": "2026-11-21T08:55:28+00:00",
+ "date": "2026-11-21T18:45:02+00:00",
  "runs": 100,
  "seed": 7,
  "repeats": 5,
@@ -23,7 +23,7 @@
   "total": 0.0
  },
  "max_dollars": null,
- "wall_s": 256.8,
+ "wall_s": 313.6,
  "machine": {
   "platform": "macOS-27.2.1-arm64-arm-64bit",
   "python": "3.12.16"
@@ -48,30 +48,29 @@
       ]
      },
      "agent_accuracy": {
-      "rate": 0.98,
+      "rate": 0.99,
       "ci95": [
-       0.93,
-       0.994
+       0.946,
+       0.998
       ]
      },
      "forks": {
-      "mean": 16.86,
+      "mean": 16.81,
       "p50": 20,
-      "p95": 29,
-      "max": 50
+      "p95": 31,
+      "max": 48
      },
      "live_calls": {
-      "mean": 44.24,
-      "p50": 39,
-      "p95": 117,
-      "max": 165
+      "mean": 44.01,
+      "p50": 37,
+      "p95": 133,
+      "max": 140
      },
      "dollars": {
       "mean": 0.0
      },
      "status": {
-      "found": 99,
-      "no_step": 1
+      "found": 100
      }
     },
     "scan": {
@@ -91,16 +90,16 @@
       ]
      },
      "forks": {
-      "mean": 21.08,
+      "mean": 20.46,
       "p50": 21,
       "p95": 47,
-      "max": 51
+      "max": 49
      },
      "live_calls": {
-      "mean": 37.02,
+      "mean": 35.44,
       "p50": 27,
       "p95": 106,
-      "max": 138
+      "max": 122
      },
      "dollars": {
       "mean": 0.0
@@ -110,17 +109,17 @@
     "random": {
      "trials": 100,
      "step_accuracy": {
-      "rate": 0.18,
+      "rate": 0.09,
       "ci95": [
-       0.117,
-       0.267
+       0.048,
+       0.162
       ]
      },
      "agent_accuracy": {
-      "rate": 0.22,
+      "rate": 0.17,
       "ci95": [
-       0.15,
-       0.311
+       0.109,
+       0.255
       ]
      },
      "forks": {
@@ -223,17 +222,17 @@
     "random": {
      "trials": 100,
      "step_accuracy": {
-      "rate": 0.04,
+      "rate": 0.07,
       "ci95": [
-       0.016,
-       0.098
+       0.034,
+       0.137
       ]
      },
      "agent_accuracy": {
-      "rate": 0.04,
+      "rate": 0.07,
       "ci95": [
-       0.016,
-       0.098
+       0.034,
+       0.137
       ]
      },
      "forks": {
@@ -336,17 +335,17 @@
     "random": {
      "trials": 100,
      "step_accuracy": {
-      "rate": 0.0,
+      "rate": 0.01,
       "ci95": [
-       0.0,
-       0.037
+       0.002,
+       0.054
       ]
      },
      "agent_accuracy": {
-      "rate": 0.0,
+      "rate": 0.01,
       "ci95": [
-       0.0,
-       0.037
+       0.002,
+       0.054
       ]
      },
      "forks": {

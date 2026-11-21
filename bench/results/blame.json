@@ -1,10 +1,10 @@
 {
  "benchmark": "blame",
- "date": "2026-11-21T08:51:11+00:00",
+ "date": "2026-11-21T18:44:58+00:00",
  "runs": 100,
  "seed": 7,
  "repeats": 1,
- "workers": 4,
+ "workers": 1,
  "threshold": 0.5,
  "noise": {
   "recur": 0.0,
@@ -23,7 +23,7 @@
   "total": 0.0
  },
  "max_dollars": null,
- "wall_s": 70.0,
+ "wall_s": 86.9,
  "machine": {
   "platform": "macOS-27.2.1-arm64-arm-64bit",
   "python": "3.12.16"
@@ -33,35 +33,35 @@
    "runs": 100,
    "attempted": 100,
    "skipped": {
-    "clean_failed": 3,
+    "clean_failed": 0,
     "fault_masked": 0
    },
-   "faulted": 97,
+   "faulted": 100,
    "methods": {
     "ledger": {
-     "trials": 97,
+     "trials": 100,
      "step_accuracy": {
       "rate": 1.0,
       "ci95": [
-       0.962,
+       0.963,
        1.0
       ]
      },
      "agent_accuracy": {
       "rate": 1.0,
       "ci95": [
-       0.962,
+       0.963,
        1.0
       ]
      },
      "forks": {
-      "mean": 4.62,
+      "mean": 4.81,
       "p50": 7,
       "p95": 7,
       "max": 7
      },
      "live_calls": {
-      "mean": 13.76,
+      "mean": 14.78,
       "p50": 19,
       "p95": 33,
       "max": 33
@@ -70,33 +70,33 @@
       "mean": 0.0
      },
      "status": {
-      "found": 97
+      "found": 100
      }
     },
     "scan": {
-     "trials": 97,
+     "trials": 100,
      "step_accuracy": {
       "rate": 1.0,
       "ci95": [
-       0.962,
+       0.963,
        1.0
       ]
      },
      "agent_accuracy": {
       "rate": 1.0,
       "ci95": [
-       0.962,
+       0.963,
        1.0
       ]
      },
      "forks": {
-      "mean": 4.78,
+      "mean": 4.92,
       "p50": 5,
       "p95": 10,
       "max": 10
      },
      "live_calls": {
-      "mean": 8.98,
+      "mean": 9.32,
       "p50": 7,
       "p95": 26,
       "max": 26
@@ -107,19 +107,19 @@
      "status": {}
     },
     "random": {
-     "trials": 97,
+     "trials": 100,
      "step_accuracy": {
-      "rate": 0.113,
+      "rate": 0.09,
       "ci95": [
-       0.065,
-       0.192
+       0.048,
+       0.162
       ]
      },
      "agent_accuracy": {
-      "rate": 0.175,
+      "rate": 0.17,
       "ci95": [
-       0.112,
-       0.263
+       0.109,
+       0.255
       ]
      },
      "forks": {
@@ -221,17 +221,17 @@
     "random": {
      "trials": 100,
      "step_accuracy": {
-      "rate": 0.1,
+      "rate": 0.11,
       "ci95": [
-       0.055,
-       0.174
+       0.063,
+       0.186
       ]
      },
      "agent_accuracy": {
-      "rate": 0.1,
+      "rate": 0.11,
       "ci95": [
-       0.055,
-       0.174
+       0.063,
+       0.186
       ]
      },
      "forks": {
@@ -333,17 +333,17 @@
     "random": {
      "trials": 100,
      "step_accuracy": {
-      "rate": 0.04,
+      "rate": 0.07,
       "ci95": [
-       0.016,
-       0.098
+       0.034,
+       0.137
       ]
      },
      "agent_accuracy": {
-      "rate": 0.04,
+      "rate": 0.07,
       "ci95": [
-       0.016,
-       0.098
+       0.034,
+       0.137
       ]
      },
      "forks": {
@@ -445,17 +445,17 @@
     "random": {
      "trials": 100,
      "step_accuracy": {
-      "rate": 0.02,
+      "rate": 0.04,
       "ci95": [
-       0.006,
-       0.07
+       0.016,
+       0.098
       ]
      },
      "agent_accuracy": {
-      "rate": 0.02,
+      "rate": 0.04,
       "ci95": [
-       0.006,
-       0.07
+       0.016,
+       0.098
       ]
      },
      "forks": {
@@ -557,17 +557,17 @@
     "random": {
      "trials": 100,
      "step_accuracy": {
-      "rate": 0.0,
+      "rate": 0.01,
       "ci95": [
-       0.0,
-       0.037
+       0.002,
+       0.054
       ]
      },
      "agent_accuracy": {
-      "rate": 0.0,
+      "rate": 0.01,
       "ci95": [
-       0.0,
-       0.037
+       0.002,
+       0.054
       ]
      },
      "forks": {
