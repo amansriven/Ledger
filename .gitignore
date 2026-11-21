@@ -12,3 +12,10 @@ chaos/.work/
 
 # Downloaded benchmark data (Who&When)
 bench/data/
+
+# Trace UI build output, copied in by `make ui`
+ledger/ui/static/
+server/web/
+ui/node_modules/
+ui/build/
+ui/.svelte-kit/

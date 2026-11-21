@@ -1,0 +1,8 @@
+module github.com/amansriven/Ledger/server
+
+go 1.27.4
+
+require (
+	connectrpc.com/connect v1.21.1
+	google.golang.org/protobuf v1.36.12
+)

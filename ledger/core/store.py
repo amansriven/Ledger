@@ -14,12 +14,15 @@ at a missing blob. ``events()`` fills the payloads back in.
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from ledger.core.blobs import BlobStore
 from ledger.core.events import body_kind, pb
@@ -47,6 +50,17 @@ CREATE TABLE IF NOT EXISTS events (
     data      BLOB    NOT NULL,
     PRIMARY KEY (run_id, idx)
 ) WITHOUT ROWID;
+
+-- Diagnoses saved by `ledger diagnose`, for the trace servers to show.
+-- data is the diagnosis as JSON (schema "ledger.diagnosis/1"); created_at
+-- is UTC ISO 8601 ("2026-11-21T12:00:00.000000Z").
+CREATE TABLE IF NOT EXISTS diagnoses (
+    id         INTEGER PRIMARY KEY,
+    run_id     TEXT    NOT NULL,
+    created_at TEXT    NOT NULL,
+    data       TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS diagnoses_run ON diagnoses (run_id, id);
 """
 
 
@@ -75,6 +89,14 @@ class RunStorage:
     @property
     def total(self) -> int:
         return self.events + self.blobs
+
+
+@dataclass(frozen=True)
+class StoredDiagnosis:
+    id: int
+    run_id: str
+    created_at: str  # UTC ISO 8601
+    data: dict[str, Any]
 
 
 class EventStore:
@@ -234,6 +256,27 @@ class EventStore:
                 (prefix, prefix + "\U0010ffff"),
             ).fetchall()
         return [r for (r,) in rows]
+
+    def save_diagnosis(self, run_id: str, report: dict[str, Any]) -> int:
+        """Save a diagnosis of ``run_id`` (``Diagnosis.to_dict()``, plus
+        anything else worth keeping) and return its id."""
+        created = datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        data = json.dumps(report, ensure_ascii=False)
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO diagnoses (run_id, created_at, data) VALUES (?, ?, ?)",
+                (run_id, created, data),
+            )
+            return int(cur.lastrowid or 0)
+
+    def diagnoses(self, run_id: str) -> list[StoredDiagnosis]:
+        """The diagnoses saved for ``run_id``, oldest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, created_at, data FROM diagnoses WHERE run_id = ? ORDER BY id",
+                (run_id,),
+            ).fetchall()
+        return [StoredDiagnosis(i, run_id, c, json.loads(d)) for i, c, d in rows]
 
     def close(self) -> None:
         with self._lock:

@@ -414,6 +414,7 @@ def cmd_diagnose(args: argparse.Namespace, store: EventStore) -> int:
             "input_per_mtok": pricing.input_per_mtok, "output_per_mtok": pricing.output_per_mtok,
         },
     }
+    saved = "" if args.no_save else f"  saved=#{store.save_diagnosis(args.run_id, report)}"
     text = json.dumps(report, indent=2, ensure_ascii=False)
     if args.out:
         with open(args.out, "w", encoding="utf-8") as f:
@@ -424,7 +425,7 @@ def cmd_diagnose(args: argparse.Namespace, store: EventStore) -> int:
     verdict = f"{d.status}: " + (", ".join(f"#{s.index} {s.key}" for s in d.steps) or "no step")
     if d.status == "budget" and d.narrowed:
         verdict += f" (narrowed to {len(d.narrowed)} candidates)"
-    print(f"{verdict}  forks={d.forks} live={d.live_calls} ${d.dollars:.4f}", file=sys.stderr)
+    print(f"{verdict}  forks={d.forks} live={d.live_calls} ${d.dollars:.4f}{saved}", file=sys.stderr)
     return 0 if d.complete else 1
 
 
@@ -547,7 +548,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="find the step that broke a failed run; print the diagnosis as JSON",
         description="Bisects over forks of the run in which chosen calls rerun live, "
         "and prints the diagnosis as JSON (to stdout or --out) and a one-line verdict "
-        "to stderr. Exit 0 if it found the step(s), 1 if not (no step, out of budget, "
+        "to stderr. The diagnosis is also saved in the store unless --no-save. Exit 0 if it found the step(s), 1 if not (no step, out of budget, "
         "inconsistent), 2 on an error such as a run that passes its check.",
     )
     dg.add_argument("run_id", metavar="RUN_ID")
@@ -557,6 +558,10 @@ def build_parser() -> argparse.ArgumentParser:
         "succeeds (default: $LEDGER_CHECK)",
     )
     dg.add_argument("-o", "--out", default=None, metavar="FILE", help="write the JSON here")
+    dg.add_argument(
+        "--no-save", action="store_true",
+        help="don't save the diagnosis in the store (where `ledger ui` shows it)",
+    )
     dg.add_argument(
         "--kind", action="append", choices=CANDIDATE_KINDS, default=[],
         help="call kinds that can be blamed (repeatable; default: all of them)",

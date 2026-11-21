@@ -101,3 +101,16 @@ def test_sigkill_mid_write_leaves_only_whole_events(tmp_path):
     assert [e.index for e in events] == list(range(len(events)))
     assert all(e.tool_call.args.json == b"x" * 4096 for e in events)
     assert [e.step.seq for e in events] == list(range(len(events)))
+
+
+def test_diagnoses_round_trip_and_survive_reopening(tmp_path):
+    path = tmp_path / "ledger.db"
+    with ledger.EventStore(path) as store:
+        a = store.save_diagnosis("run-a", {"schema": "ledger.diagnosis/1", "status": "found"})
+        b = store.save_diagnosis("run-a", {"status": "no_step", "note": "ünïcode"})
+        store.save_diagnosis("run-b", {"status": "budget"})
+    with ledger.EventStore(path) as store:
+        got = store.diagnoses("run-a")
+    assert [d.id for d in got] == [a, b] and a < b
+    assert [d.data["status"] for d in got] == ["found", "no_step"]
+    assert got[1].data["note"] == "ünïcode"

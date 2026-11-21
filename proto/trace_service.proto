@@ -1,0 +1,117 @@
+// Ledger trace service: read access to the event log for the UI.
+//
+// Served by the Go trace server (server/) and by `ledger ui` (ledger/ui/),
+// which must answer every RPC identically. Both are thin readers of the
+// SQLite log the Python runtime writes; diffing, timeline layout and blame
+// display happen in the UI, so neither server interprets more than it must.
+//
+// Payload bytes over INLINE_LIMIT (256 KiB) are left out of the events these
+// RPCs return: such a Payload has `sha256` set and `json` empty, and the UI
+// fetches it with GetPayload.
+
+syntax = "proto3";
+
+package ledger.v1;
+
+import "events.proto";
+import "google/protobuf/timestamp.proto";
+
+service TraceService {
+  // Every run in the store, oldest first.
+  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse);
+  // One run's summary and its whole log.
+  rpc GetRun(GetRunRequest) returns (GetRunResponse);
+  // A run's events from `from_index` on: those already logged, then each new
+  // one as it is appended. Ends once the run has finished (a RunFinished
+  // after its last RunResumed); a finished run's stream ends after its
+  // backlog.
+  rpc WatchRun(WatchRunRequest) returns (stream WatchRunResponse);
+  // A payload's bytes by digest, for payloads left out of an event.
+  rpc GetPayload(GetPayloadRequest) returns (GetPayloadResponse);
+  // Diagnoses saved for a run (`ledger diagnose`), oldest first.
+  rpc ListDiagnoses(ListDiagnosesRequest) returns (ListDiagnosesResponse);
+}
+
+enum RunStatus {
+  RUN_STATUS_UNSPECIFIED = 0;
+  // The last RunFinished after the last RunResumed has an output.
+  RUN_STATUS_OK = 1;
+  // ... has an error.
+  RUN_STATUS_ERROR = 2;
+  // No RunFinished after the last RunResumed: still running, or it crashed.
+  RUN_STATUS_UNFINISHED = 3;
+}
+
+message RunSummary {
+  string run_id = 1;
+  // From the run's RunStarted.
+  Mode mode = 2;
+  string source_run_id = 3;
+  string graph = 4;
+  RunStatus status = 5;
+  // Set when status is RUN_STATUS_ERROR.
+  Error error = 6;
+  // LLM calls, tool calls and settled effects (an effect's PENDING record
+  // is not counted), as `ledger runs` counts them.
+  int32 calls = 7;
+  // Of those, the ones that went live rather than coming from the log.
+  int32 live = 8;
+  int32 diverged = 9;
+  int32 resumed = 10;
+  int32 events = 11;
+  // recorded_at of the first event, and of the last RunFinished when the
+  // run has finished.
+  google.protobuf.Timestamp started_at = 12;
+  google.protobuf.Timestamp finished_at = 13;
+  // Diagnoses saved for this run.
+  int32 diagnoses = 14;
+}
+
+message Diagnosis {
+  int64 id = 1;
+  string run_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+  // Diagnosis.to_dict() as JSON, schema "ledger.diagnosis/1", plus what
+  // `ledger diagnose` adds (graph, check, settings).
+  string json = 4;
+}
+
+message ListRunsRequest {}
+
+message ListRunsResponse {
+  repeated RunSummary runs = 1;
+}
+
+message GetRunRequest {
+  string run_id = 1;
+}
+
+message GetRunResponse {
+  RunSummary summary = 1;
+  repeated Event events = 2;
+}
+
+message WatchRunRequest {
+  string run_id = 1;
+  int64 from_index = 2;
+}
+
+message WatchRunResponse {
+  Event event = 1;
+}
+
+message GetPayloadRequest {
+  string sha256 = 1;
+}
+
+message GetPayloadResponse {
+  Payload payload = 1;
+}
+
+message ListDiagnosesRequest {
+  string run_id = 1;
+}
+
+message ListDiagnosesResponse {
+  repeated Diagnosis diagnoses = 1;
+}

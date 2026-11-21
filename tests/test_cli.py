@@ -315,3 +315,19 @@ def test_diagnose_errors(db, capsys, monkeypatch):
     monkeypatch.setenv("LEDGER_CHECK", "tests.cli_targets:positive")
     code, _, _ = run(capsys, "diagnose", bad_run, "-g", SIMPLE)
     assert code == 0
+
+
+def test_diagnose_saves_the_diagnosis_in_the_store(db, capsys):
+    run_id, guilty = record_bad_bump(db)
+    code, out, err = run(capsys, "diagnose", run_id, "-g", SIMPLE, "-c", "tests.cli_targets:positive")
+    assert code == 0 and "saved=#1" in err
+    code, _, err = run(capsys, "diagnose", run_id, "-g", SIMPLE, "-c", "tests.cli_targets:positive",
+                       "--no-save")
+    assert code == 0 and "saved" not in err
+    with ledger.EventStore(db) as store:
+        [saved] = store.diagnoses(run_id)
+        assert store.diagnoses("other") == []
+    assert saved.id == 1 and saved.run_id == run_id
+    assert saved.data == json.loads(out)  # the whole report, settings included
+    assert saved.data["step"]["key"] == guilty
+    assert saved.created_at.endswith("Z")
