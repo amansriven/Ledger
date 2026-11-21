@@ -610,13 +610,17 @@ wheels = [
 
 [[package]]
 name = "ledger-runtime"
-version = "0.0.1"
 source = { editable = "." }
 default-groups = ["bench", "dev", "examples"]
 dependencies = [
     { name = "langgraph" },
     { name = "openai" },
     { name = "protobuf" },
+]
+
+[package.optional-dependencies]
+examples = [
+    { name = "stripe" },
 ]
 
 [package.dev-dependencies]
@@ -637,7 +641,9 @@ requires-dist = [
     { name = "langgraph", specifier = ">=0.6" },
     { name = "openai", specifier = ">=1.40" },
     { name = "protobuf", specifier = ">=7.35" },
+    { name = "stripe", marker = "extra == 'examples'", specifier = ">=17.1.0" },
 ]
+provides-extras = ["examples"]
 
 [package.metadata.requires-dev]
 bench = [{ name = "langgraph-checkpoint-sqlite", specifier = ">=3.1.3" }]

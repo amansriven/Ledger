@@ -18,12 +18,12 @@ answer to the customer.
 The same code runs against the fake Stripe server
 (``ledger.testing.fake_stripe``) and against Stripe in test mode: set
 ``STRIPE_API_BASE`` to an empty string, and put a test key in
-``STRIPE_SECRET_KEY`` (the environment, or ``.env`` at the repo root, which
+``STRIPE_SECRET_KEY`` (the environment, or ``.env`` in the current directory, which
 git ignores). Live keys are refused, and the fake server never gets the key.
 
     python -m ledger.testing.fake_stripe --port 12111 &
     python -m ledger.testing.fake_llm --port 8787 &
-    python -m examples.refund_agent          # seeds a charge, records one refund
+    python -m ledger.examples.refund_agent          # seeds a charge, records one refund
 """
 
 from __future__ import annotations
@@ -50,7 +50,9 @@ REASONS = ("duplicate", "fraudulent", "requested_by_customer")
 FAKE_STRIPE = "http://127.0.0.1:12111"
 # Charge metadata key naming the ticket that is refunding the charge.
 CLAIM = "refund_claim"
-ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+# Relative, so it is read from the directory the agent runs in (the repo
+# root in a checkout; wherever you run it from once installed).
+ENV_FILE = Path(".env")
 
 # Stripe errors after which a refund may or may not have been made: retrying
 # with the same idempotency key is safe. Anything else (a declined or invalid
@@ -286,6 +288,7 @@ def main() -> int:
         "reason": "duplicate",
     }
     with ledger.record() as session:
+        session.graph_ref = f"{__spec__.name if __spec__ else __name__}:graph_from_env"  # for `ledger replay`
         out = graph_from_env().invoke(ticket)
     print(f"recorded {session.run_id}: {out['decision']['why']}, refund {out['refund']['id']}")
     return 0

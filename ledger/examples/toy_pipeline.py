@@ -14,9 +14,9 @@ randomness, ids and clock reads.
 
 Usage (fake server on :8787, see ledger.testing.fake_llm):
 
-    python -m examples.toy_pipeline record --runs 5
-    python -m examples.toy_pipeline replay --all
-    python -m examples.toy_pipeline list
+    python -m ledger.examples.toy_pipeline record --runs 5
+    python -m ledger.examples.toy_pipeline replay --all
+    python -m ledger.examples.toy_pipeline list
 """
 
 from __future__ import annotations
