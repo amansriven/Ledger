@@ -9,3 +9,6 @@ dist/
 *.db.blobs/
 .env
 chaos/.work/
+
+# Downloaded benchmark data (Who&When)
+bench/data/

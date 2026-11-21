@@ -2,7 +2,7 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay) done; M2 (exactly-once effects) done.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. Recording adds 0.20 ms per step at p50 (0.41 ms at p95) on the 5-node pipeline. M3 (blame) has started: `ledger.diagnose` finds the step that broke a failed run by bisecting over forked replays, and `ledger.testing.faults` makes failed runs with a known guilty step. `bench/blame_eval.py` scores it against a naive rerun scan and random pick on injected faults; the LLM-judge baseline and Who&When need a model and come next. The UI comes later (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay) done; M2 (exactly-once effects) done.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. Recording adds 0.20 ms per step at p50 (0.41 ms at p95) on the 5-node pipeline. M3 (blame) has started: `ledger.diagnose` finds the step that broke a failed run by bisecting over forked replays, and `ledger.testing.faults` makes failed runs with a known guilty step. `bench/blame_eval.py` scores it against a naive rerun scan and random pick on injected faults; `bench/who_and_when.py` loads the Who&When logs and scores log-only methods on them. The LLM-judge baseline needs a model and comes next. The UI comes later (see `Ledger Detailed Build Plan.md`).
 
 ## Integration
 
@@ -361,6 +361,36 @@ Noise costs `ledger` more accuracy than `scan`. A bisection has several forks th
 
 Two things follow. A majority vote is the wrong rule for this kind of noise. In 60-run sessions with the same noise and 5 repeats, `threshold=0.5` scored 0.63 on toy and 0.20 on chain-16, against 0.97 and 0.73 with `threshold=0`. And `ledger` isn't more accurate than the scan, only cheaper. Whether noisy reruns matter depends on how often a real model repeats or adds a mistake when a call is redrawn, which needs a real model to measure.
 
+## Who&When
+
+[Who&When](https://arxiv.org/abs/2505.00212) is 184 failure logs of LLM multi-agent systems: 126 from systems CaptainAgent generated and 58 from hand-crafted ones such as Magentic-One. Each is labelled with the agent responsible and the decisive step. The logs are recordings, not runnable systems, so counterfactual blame can't run on them; `bench/who_and_when.py` is where log-only methods are compared.
+
+```bash
+python -m bench.who_and_when download         # the JSON logs, about 7 MB, into bench/data/ (gitignored)
+python -m bench.who_and_when stats
+python -m bench.who_and_when run --judge-model MODEL --judge-base-url URL --judge-price IN OUT
+```
+
+The download is pinned to a dataset revision. The card states no license, so the data stays out of the repo.
+
+The two halves are formatted differently, and the loader evens them out:
+
+- **Speaker field:** a message's speaker is its `name` in the generated logs and its `role` in the hand-crafted ones.
+- **Agent names:** the Orchestrator speaks as "Orchestrator (thought)" or "Orchestrator (-> WebSurfer)" while labels say "Orchestrator", and names differ in case and underscores ("Websurfer", "VerificationExpert"). Agents are therefore compared without the parenthesized suffix, lowercased, letters and digits only.
+
+  With that, the speaker at the labelled step is the labelled agent in 178 of 184 logs. In the other 6 the label names someone else, such as a terminal's output blamed on the expert who ran the code.
+- **Steps:** labels are 0-based indices into the message history.
+
+The generated logs run 5 to 10 messages; the hand-crafted ones run 5 to 130, median 33. A judge reading every log in full reads about 1.3M tokens (by a 4-characters-per-token estimate), 0.93M of them in the hand-crafted half. `--max-chars` cuts long messages, and `--max-dollars` stops the judge once it has spent that much.
+
+| Method | Agent accuracy | Step accuracy |
+| --- | --- | --- |
+| random, all 184 | 0.332 | 0.095 |
+| random, algorithm-generated | 0.291 | 0.120 |
+| random, hand-crafted | 0.422 | 0.042 |
+
+`random` is the exact expected accuracy of picking one of the log's agents (not the human who set the task) and one of its steps uniformly. `judge` is Who&When's all-at-once method: an LLM given the task, optionally the right answer (`--with-ground-truth`), and the whole log, naming the agent and step. It needs a model and has not been run yet. Who&When's best method reached 53.5% agent-level and 14.2% step-level accuracy.
+
 ## Clock, ids and randomness
 
 `ledger.time()`, `ledger.now()`, `ledger.uuid4()` and `ledger.rng()` read live values while recording and logged values while replaying; outside a session they behave like the stdlib. `ledger.rng()` logs one seed per task and returns a `random.Random`, so any number of draws costs one event. They are explicit calls, not patches of `time`, `uuid` and `random`, because LangGraph, httpx and the OpenAI client read the clock too, a varying number of times per run.
@@ -423,6 +453,7 @@ docker compose -f deploy/docker-compose.yml run --rm replay
 | `examples/toy_pipeline.py` | 5-node pipeline with a 3-way parallel fan-out |
 | `bench/replay_fidelity.py` | Replay-fidelity benchmark against LangGraph checkpoint replay; results in `bench/results/` |
 | `bench/blame_eval.py` | Blame benchmark: injected faults, scored for `diagnose`, a rerun scan, random pick and an LLM judge |
+| `bench/who_and_when.py` | Who&When: download, loader, and log-only methods (random, an LLM judge) scored on it |
 | `bench/overhead.py` | Overhead benchmark: added latency per step with Ledger recording and replaying |
 | `deploy/` | Dockerfile and Compose file |
 
