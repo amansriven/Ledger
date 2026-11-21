@@ -101,7 +101,8 @@ def test_the_blame_benchmark_scores_every_method(tmp_path, fake_server):
     rep = json.loads(out.read_text())
     for name in ("toy", "chain-8"):
         res = rep["workloads"][name]
-        assert res["skipped"] == 0
+        assert res["skipped"] == {"clean_failed": 0, "fault_masked": 0}
+        assert res["faulted"] == res["attempted"] == 4
         m = res["methods"]
         assert set(m) == {"ledger", "scan", "random", "judge"}
         for method in ("ledger", "scan"):
