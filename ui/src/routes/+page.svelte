@@ -41,7 +41,10 @@
 		<td class="id">
 			<a class="mono" href="/runs/{r.runId}" title={r.runId}>{shortId(r.runId)}</a>
 		</td>
-		<td>{MODE_NAMES[r.mode]}</td>
+		<td>
+			{MODE_NAMES[r.mode]}
+			{#if r.sourceRunId}<a class="diff-link" href="/diff?b={r.runId}" title="Compare with {r.sourceRunId}">diff</a>{/if}
+		</td>
 		<td>
 			<span class="badge {status}">{status === 'unfinished' ? 'running or crashed' : status}</span>
 			{#if r.resumed > 0}<span class="badge" title="resumed after a crash or failure">resumed ×{r.resumed}</span>{/if}
@@ -162,6 +165,10 @@
 		max-width: 160px;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+	.diff-link {
+		font-size: 12px;
+		margin-left: 6px;
 	}
 	.empty {
 		padding: 24px;

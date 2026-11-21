@@ -92,7 +92,10 @@
 	</div>
 	<div class="facts muted">
 		{#if started?.sourceRunId}
-			<span>{MODE_NAMES[started.mode]} of <a class="mono" href="/runs/{started.sourceRunId}">{shortId(started.sourceRunId)}</a></span>
+			<span>
+				{MODE_NAMES[started.mode]} of <a class="mono" href="/runs/{started.sourceRunId}">{shortId(started.sourceRunId)}</a>
+				· <a href="/diff?b={runId}">diff against it</a>
+			</span>
 		{/if}
 		{#if started?.graph}<span class="mono">{started.graph}</span>{/if}
 		<span>{counted.length} calls, {live} live</span>
