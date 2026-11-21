@@ -58,9 +58,14 @@ path = "ledger/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ledger"]
+# The built trace UI is gitignored (copied in by `make ui`), so list it as an
+# artifact or hatch would leave it out of the wheel.
+artifacts = ["ledger/ui/static/**"]
 
 [tool.hatch.build.targets.sdist]
 include = ["ledger/", "proto/", "README.md", "LICENSE", "pyproject.toml"]
+# `uv build` makes the wheel from the sdist, so the UI has to be in both.
+artifacts = ["ledger/ui/static/**"]
 
 [tool.uv]
 default-groups = ["dev", "bench", "examples"]
