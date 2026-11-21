@@ -84,3 +84,43 @@ def test_the_overhead_benchmark_measures_every_mode(tmp_path):
         assert added["run_ms"] == pytest.approx(
             s["run_ms"][mode]["p50"] - s["run_ms"]["off"]["p50"], abs=0.01)
         assert added["per_call_ms"] == pytest.approx(added["run_ms"] / 8, abs=0.01)
+
+
+def test_the_blame_benchmark_scores_every_method(tmp_path, fake_server):
+    from bench import blame_eval
+
+    out = tmp_path / "blame.json"
+    code = blame_eval.main([
+        "--runs", "4", "--workloads", "toy,chain-8", "--out", str(out),
+        # The fake server stands in for the judge model: it answers in prose,
+        # not JSON, so the judge names no step, but the plumbing runs.
+        "--judge-model", "fake-model", "--judge-base-url", f"{fake_server.base_url}/v1",
+        "--judge-price", "1", "2",
+    ])
+    assert code == 0
+    rep = json.loads(out.read_text())
+    for name in ("toy", "chain-8"):
+        res = rep["workloads"][name]
+        assert res["skipped"] == 0
+        m = res["methods"]
+        assert set(m) == {"ledger", "scan", "random", "judge"}
+        for method in ("ledger", "scan"):
+            assert m[method]["step_accuracy"]["rate"] == 1.0
+        assert m["ledger"]["status"] == {"found": 4}
+        assert m["judge"]["step_accuracy"]["rate"] == 0.0
+        assert m["judge"]["dollars"]["mean"] > 0
+        lo, hi = m["ledger"]["step_accuracy"]["ci95"]
+        assert 0 < lo < hi == 1.0
+
+
+def test_the_judge_reads_its_key_from_dotenv(tmp_path, monkeypatch):
+    from bench import blame_eval
+
+    for name in blame_eval.JUDGE_KEYS:
+        monkeypatch.delenv(name, raising=False)
+    env = tmp_path / ".env"
+    assert blame_eval._judge_key(env) is None
+    env.write_text("STRIPE_SECRET_KEY=sk_test_x\nOPENAI_API_KEY='abc'\n")
+    assert blame_eval._judge_key(env) == "abc"
+    monkeypatch.setenv("LEDGER_JUDGE_API_KEY", "env-wins")
+    assert blame_eval._judge_key(env) == "env-wins"

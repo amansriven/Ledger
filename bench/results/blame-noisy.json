@@ -1,0 +1,347 @@
+{
+ "benchmark": "blame",
+ "date": "2026-11-21T07:10:22+00:00",
+ "runs": 100,
+ "seed": 7,
+ "repeats": 5,
+ "threshold": 0.0,
+ "noise": {
+  "recur": 0.3,
+  "flake": 0.05
+ },
+ "budget": {
+  "forks": 60
+ },
+ "judge": null,
+ "wall_s": 240.5,
+ "machine": {
+  "platform": "macOS-27.2.1-arm64-arm-64bit",
+  "python": "3.12.16"
+ },
+ "workloads": {
+  "toy": {
+   "runs": 100,
+   "skipped": 0,
+   "methods": {
+    "ledger": {
+     "trials": 100,
+     "step_accuracy": {
+      "rate": 0.95,
+      "ci95": [
+       0.888,
+       0.978
+      ]
+     },
+     "agent_accuracy": {
+      "rate": 0.97,
+      "ci95": [
+       0.915,
+       0.99
+      ]
+     },
+     "forks": {
+      "mean": 19.18,
+      "p50": 23,
+      "p95": 29,
+      "max": 49
+     },
+     "live_calls": {
+      "mean": 50.38,
+      "p50": 47,
+      "p95": 117,
+      "max": 169
+     },
+     "dollars": {
+      "mean": 0.0
+     },
+     "status": {
+      "found": 98,
+      "no_step": 2
+     }
+    },
+    "scan": {
+     "trials": 100,
+     "step_accuracy": {
+      "rate": 1.0,
+      "ci95": [
+       0.963,
+       1.0
+      ]
+     },
+     "agent_accuracy": {
+      "rate": 1.0,
+      "ci95": [
+       0.963,
+       1.0
+      ]
+     },
+     "forks": {
+      "mean": 23.82,
+      "p50": 22,
+      "p95": 48,
+      "max": 49
+     },
+     "live_calls": {
+      "mean": 42.2,
+      "p50": 29,
+      "p95": 114,
+      "max": 122
+     },
+     "dollars": {
+      "mean": 0.0
+     },
+     "status": {}
+    },
+    "random": {
+     "trials": 100,
+     "step_accuracy": {
+      "rate": 0.14,
+      "ci95": [
+       0.085,
+       0.221
+      ]
+     },
+     "agent_accuracy": {
+      "rate": 0.23,
+      "ci95": [
+       0.158,
+       0.322
+      ]
+     },
+     "forks": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "live_calls": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "dollars": {
+      "mean": 0.0
+     },
+     "status": {}
+    }
+   }
+  },
+  "chain-16": {
+   "runs": 100,
+   "skipped": 0,
+   "methods": {
+    "ledger": {
+     "trials": 100,
+     "step_accuracy": {
+      "rate": 0.84,
+      "ci95": [
+       0.756,
+       0.899
+      ]
+     },
+     "agent_accuracy": {
+      "rate": 0.84,
+      "ci95": [
+       0.756,
+       0.899
+      ]
+     },
+     "forks": {
+      "mean": 24.16,
+      "p50": 26,
+      "p95": 36,
+      "max": 40
+     },
+     "live_calls": {
+      "mean": 140.51,
+      "p50": 143,
+      "p95": 296,
+      "max": 360
+     },
+     "dollars": {
+      "mean": 0.0
+     },
+     "status": {
+      "found": 97,
+      "no_step": 3
+     }
+    },
+    "scan": {
+     "trials": 100,
+     "step_accuracy": {
+      "rate": 0.95,
+      "ci95": [
+       0.888,
+       0.978
+      ]
+     },
+     "agent_accuracy": {
+      "rate": 0.95,
+      "ci95": [
+       0.888,
+       0.978
+      ]
+     },
+     "forks": {
+      "mean": 38.28,
+      "p50": 37,
+      "p95": 74,
+      "max": 77
+     },
+     "live_calls": {
+      "mean": 218.68,
+      "p50": 156,
+      "p95": 585,
+      "max": 632
+     },
+     "dollars": {
+      "mean": 0.0
+     },
+     "status": {}
+    },
+    "random": {
+     "trials": 100,
+     "step_accuracy": {
+      "rate": 0.07,
+      "ci95": [
+       0.034,
+       0.137
+      ]
+     },
+     "agent_accuracy": {
+      "rate": 0.07,
+      "ci95": [
+       0.034,
+       0.137
+      ]
+     },
+     "forks": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "live_calls": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "dollars": {
+      "mean": 0.0
+     },
+     "status": {}
+    }
+   }
+  },
+  "chain-64": {
+   "runs": 100,
+   "skipped": 0,
+   "methods": {
+    "ledger": {
+     "trials": 100,
+     "step_accuracy": {
+      "rate": 0.29,
+      "ci95": [
+       0.21,
+       0.385
+      ]
+     },
+     "agent_accuracy": {
+      "rate": 0.29,
+      "ci95": [
+       0.21,
+       0.385
+      ]
+     },
+     "forks": {
+      "mean": 34.84,
+      "p50": 35,
+      "p95": 49,
+      "max": 60
+     },
+     "live_calls": {
+      "mean": 582.29,
+      "p50": 635,
+      "p95": 848,
+      "max": 2080
+     },
+     "dollars": {
+      "mean": 0.0
+     },
+     "status": {
+      "found": 47,
+      "no_step": 53
+     }
+    },
+    "scan": {
+     "trials": 100,
+     "step_accuracy": {
+      "rate": 0.57,
+      "ci95": [
+       0.472,
+       0.663
+      ]
+     },
+     "agent_accuracy": {
+      "rate": 0.57,
+      "ci95": [
+       0.472,
+       0.663
+      ]
+     },
+     "forks": {
+      "mean": 159.25,
+      "p50": 151,
+      "p95": 320,
+      "max": 320
+     },
+     "live_calls": {
+      "mean": 3557.9,
+      "p50": 2356,
+      "p95": 10400,
+      "max": 10400
+     },
+     "dollars": {
+      "mean": 0.0
+     },
+     "status": {}
+    },
+    "random": {
+     "trials": 100,
+     "step_accuracy": {
+      "rate": 0.03,
+      "ci95": [
+       0.01,
+       0.085
+      ]
+     },
+     "agent_accuracy": {
+      "rate": 0.03,
+      "ci95": [
+       0.01,
+       0.085
+      ]
+     },
+     "forks": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "live_calls": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "dollars": {
+      "mean": 0.0
+     },
+     "status": {}
+    }
+   }
+  }
+ }
+}

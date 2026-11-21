@@ -2,7 +2,7 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay) done; M2 (exactly-once effects) done.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. Recording adds 0.20 ms per step at p50 (0.41 ms at p95) on the 5-node pipeline. M3 (blame) has started: `ledger.diagnose` finds the step that broke a failed run by bisecting over forked replays, and `ledger.testing.faults` makes failed runs with a known guilty step. The blame benchmark and the UI come later (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay) done; M2 (exactly-once effects) done.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. Recording adds 0.20 ms per step at p50 (0.41 ms at p95) on the 5-node pipeline. M3 (blame) has started: `ledger.diagnose` finds the step that broke a failed run by bisecting over forked replays, and `ledger.testing.faults` makes failed runs with a known guilty step. `bench/blame_eval.py` scores it against a naive rerun scan and random pick on injected faults; the LLM-judge baseline and Who&When need a model and come next. The UI comes later (see `Ledger Detailed Build Plan.md`).
 
 ## Integration
 
@@ -299,7 +299,7 @@ Live calls are what a counterfactual costs, so the search starts at the end. It 
 - **Candidates:** LLM calls, tool calls, and clock, uuid and rng reads. Effects are not candidates, and a fork that would run one live raises `LiveEffectRefused` unless `live_effects=True`.
 - **Noise:** `repeats=n` runs each counterfactual up to n times. It counts as a fix when more than `threshold` of the runs pass, and it stops as soon as that's settled. Each counterfactual reports its pass rate with a 95% Wilson interval.
   - The default threshold, 0.5, is a majority vote. That suits runs that sometimes pass even with the fault kept.
-  - When they essentially never do, and noise only makes good runs fail, use `threshold=0`: one pass is enough. That covers a flaky call later on, or a model that repeats its mistake when redrawn. There a real fix can pass well under half the time.
+  - When they essentially never do, and noise only makes good runs fail, use `threshold=0`: one pass is enough. That covers a flaky call later on, or a model that repeats its mistake when redrawn. There a real fix can pass well under half the time, as the benchmark below shows.
 - **Budget:** `budget` caps forks, live calls or dollars per diagnosis. Dollars come from the token usage the live LLM calls report, priced by `pricing`. A diagnosis that runs out ends with status `"budget"`: it keeps the steps found so far, and `d.narrowed` lists the candidates the step it was looking for must be among.
 
 `ledger.testing.faults` makes failed runs with a known cause. It corrupts the outcome of one call of a recording and keeps the step it hit as ground truth. The corrupted outcome is logged as the call's own, so the log looks like any recording and nothing in it gives the answer away:
@@ -316,6 +316,50 @@ fault.step                                    # the guilty step's key
 In the tests, one fault at each of the 8 calls of a parallel tool graph and at the LLM calls of the toy pipeline is found every time, and so are two faults in different branches. That is with the fake server, where a redrawn call never repeats the fault. Accuracy on runs where it can, and against baselines, is the week-7 benchmark.
 
 **Prior work.** [Who&When](https://arxiv.org/abs/2505.00212)'s methods and [AgenTracer](https://arxiv.org/abs/2509.03312)-8B attribute a failure from its log alone; AgenTracer uses counterfactual replay only to label its training data. [FAMAS](https://arxiv.org/abs/2509.13782) reruns the system many times and scores steps by spectrum analysis. Rerunning counterfactuals at diagnosis time has been done too, for example by [Causal Agent Replay](https://arxiv.org/abs/2606.08275). What Ledger does that they don't: it reruns counterfactuals inside the runtime that recorded the run, so everything before the rerun step replays exactly from the log instead of being run again or simulated, a bisection keeps the reruns to about log2 of the step count, and no counterfactual repeats a side effect.
+
+## Blame benchmark
+
+`bench/blame_eval.py` makes failed runs with a known cause and scores each method on them. Each trial records a clean run, corrupts one of its LLM or tool calls at random with `ledger.testing.faults`, and records the run again. Every method then names a step of the failed run.
+
+- **ledger:** `ledger.diagnose`.
+- **scan:** the naive counterfactual. It reruns one step at a time (with what depends on it), last first, until a rerun fixes the run. It gives the same answers as `ledger` on clean runs, so it's there to compare costs.
+- **random:** a random LLM or tool call.
+- **judge:** an LLM reading the whole trace and naming the step, like Who&When's all-at-once method. It runs only when given a model (`--judge-model`, `--judge-base-url`, and a key in `LEDGER_JUDGE_API_KEY` or `OPENAI_API_KEY`, from the environment or `.env`). It has not been run yet.
+
+Step accuracy counts the exact step; agent accuracy counts its node. The workloads run on the fake LLM server and local tools:
+
+- **toy:** the 5-node pipeline, 11 candidate calls, with faults in its LLM calls.
+- **chain-N:** N tool calls in sequence, to show how cost grows with the step count.
+
+```bash
+python -m bench.blame_eval --runs 100
+```
+
+On clean reruns, where a redrawn call never repeats the fault, each method has 100 runs per workload. Accuracy intervals are 95% Wilson; costs are means per diagnosis:
+
+| Workload | ledger step acc | scan step acc | random step acc | ledger forks | scan forks | ledger live calls | scan live calls |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| toy | 1.00 (0.96–1.00) | 1.00 | 0.14 (0.09–0.22) | 5.1 | 5.4 | 15.6 | 10.3 |
+| chain-8 | 1.00 (0.96–1.00) | 1.00 | 0.13 | 4.3 | 4.3 | 16.1 | 14.0 |
+| chain-16 | 1.00 (0.96–1.00) | 1.00 | 0.07 | 6.2 | 8.2 | 40.6 | 47.7 |
+| chain-32 | 1.00 (0.96–1.00) | 1.00 | 0.06 | 8.0 | 15.8 | 97.4 | 173.5 |
+| chain-64 | 1.00 (0.96–1.00) | 1.00 | 0.03 | 9.9 | 31.1 | 226.3 | 659.4 |
+
+- **Forks** grow with the log of the step count for `ledger` and linearly for `scan`. At 64 steps `ledger` makes 2.9 times fewer live calls.
+- **Small graphs:** below about 16 steps, and on the parallel toy pipeline, `scan` makes fewer live calls. It reruns one branch and leaves its siblings replayed, while every `ledger` fork reruns everything after a point in the log.
+- **Accuracy:** 100% here shows the search is correct. It does not show that real faults get found: on the fake server a redrawn call is always clean.
+
+`--recur p` makes the guilty call go wrong again with probability p when it's rerun, and `--flake q` makes any live call go wrong with probability q. With recur 0.3, flake 0.05, 5 repeats and `threshold=0` (`bench/results/blame-noisy.json`):
+
+| Workload | ledger step acc | scan step acc | ledger forks | scan forks | ledger live calls | scan live calls |
+| --- | --- | --- | --- | --- | --- | --- |
+| toy | 0.95 (0.89–0.98) | 1.00 (0.96–1.00) | 19.2 | 23.8 | 50.4 | 42.2 |
+| chain-16 | 0.84 (0.76–0.90) | 0.95 (0.89–0.98) | 24.2 | 38.3 | 140.5 | 218.7 |
+| chain-64 | 0.29 (0.21–0.39) | 0.57 (0.47–0.66) | 34.8 | 159.2 | 582.3 | 3,557.9 |
+
+Noise costs `ledger` more accuracy than `scan`. A bisection has several forks that must pass, and each can fail for no reason, so each is a chance to go wrong; `scan` has only one fork that must pass. At 64 steps both break down, because a rerun of 64 calls at 5% flake each comes out clean about 4% of the time.
+
+Two things follow. A majority vote is the wrong rule for this kind of noise. In 60-run sessions with the same noise and 5 repeats, `threshold=0.5` scored 0.63 on toy and 0.20 on chain-16, against 0.97 and 0.73 with `threshold=0`. And `ledger` isn't more accurate than the scan, only cheaper. Whether noisy reruns matter depends on how often a real model repeats or adds a mistake when a call is redrawn, which needs a real model to measure.
 
 ## Clock, ids and randomness
 
@@ -378,6 +422,7 @@ docker compose -f deploy/docker-compose.yml run --rm replay
 | `chaos/` | Chaos benchmark: worker, harness (local `kill -9` or `docker kill` with Toxiproxy), invariants |
 | `examples/toy_pipeline.py` | 5-node pipeline with a 3-way parallel fan-out |
 | `bench/replay_fidelity.py` | Replay-fidelity benchmark against LangGraph checkpoint replay; results in `bench/results/` |
+| `bench/blame_eval.py` | Blame benchmark: injected faults, scored for `diagnose`, a rerun scan, random pick and an LLM judge |
 | `bench/overhead.py` | Overhead benchmark: added latency per step with Ledger recording and replaying |
 | `deploy/` | Dockerfile and Compose file |
 
