@@ -143,6 +143,14 @@ def test_parallel_trials_draw_the_same_faults(tmp_path):
                                            store, None, ("ledger", "random"),
                                            blame_eval.Spend(), workers)
 
+    def answers(rep):
+        # Accuracy only: diagnose bisects in log order, and the calls of the
+        # parallel agents reach the log in thread order, so its fork and live
+        # call counts can differ between two recordings of the same fault.
+        return {m: {k: s[k] for k in ("trials", "step_accuracy", "agent_accuracy")}
+                for m, s in rep["methods"].items()}
+
     one, four = run(1), run(4)
     assert one["faulted"] == four["faulted"] and one["skipped"] == four["skipped"]
-    assert one["methods"] == four["methods"]
+    assert set(one["methods"]) == {"ledger", "random"}
+    assert answers(one) == answers(four)
