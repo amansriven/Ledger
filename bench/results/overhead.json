@@ -1,0 +1,95 @@
+{
+ "benchmark": "overhead",
+ "date": "2026-11-21T03:31:24+00:00",
+ "runs": 1000,
+ "warmup": 20,
+ "latency_ms": 0,
+ "steps_per_run": 5,
+ "machine": {
+  "platform": "macOS-27.2.1-arm64-arm-64bit",
+  "python": "3.12.16",
+  "processor": "arm"
+ },
+ "summary": {
+  "run_ms": {
+   "off": {
+    "mean": 7.78,
+    "p50": 7.36,
+    "p95": 10.12,
+    "max": 18.45
+   },
+   "record": {
+    "mean": 9.03,
+    "p50": 8.34,
+    "p95": 12.18,
+    "max": 34.16
+   },
+   "replay": {
+    "mean": 1.73,
+    "p50": 1.58,
+    "p95": 3.0,
+    "max": 7.04
+   }
+  },
+  "per_step_ms": {
+   "off": {
+    "mean": 1.556,
+    "p50": 1.472,
+    "p95": 2.024,
+    "max": 3.69
+   },
+   "record": {
+    "mean": 1.806,
+    "p50": 1.668,
+    "p95": 2.436,
+    "max": 6.832
+   },
+   "replay": {
+    "mean": 0.346,
+    "p50": 0.316,
+    "p95": 0.6,
+    "max": 1.408
+   }
+  },
+  "added": {
+   "record": {
+    "p50": {
+     "run_ms": 0.98,
+     "per_step_ms": 0.196,
+     "per_call_ms": 0.122
+    },
+    "p95": {
+     "run_ms": 2.06,
+     "per_step_ms": 0.412,
+     "per_call_ms": 0.258
+    }
+   },
+   "replay": {
+    "p50": {
+     "run_ms": -5.78,
+     "per_step_ms": -1.156,
+     "per_call_ms": -0.723
+    },
+    "p95": {
+     "run_ms": -7.12,
+     "per_step_ms": -1.424,
+     "per_call_ms": -0.89
+    }
+   }
+  },
+  "calls_per_run": 8,
+  "events_per_run": {
+   "mean": 13.0,
+   "p50": 13.0,
+   "p95": 13.0,
+   "max": 13.0
+  },
+  "log_kb": {
+   "mean": 9.28,
+   "p50": 9.27,
+   "p95": 9.43,
+   "max": 9.43
+  },
+  "replays_not_identical": 0
+ }
+}

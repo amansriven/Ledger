@@ -2,7 +2,7 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay) done; M2 (exactly-once effects) under way, week 5.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. The overhead benchmark comes next; blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay) done; M2 (exactly-once effects) done.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. Recording adds 0.20 ms per step at p50 (0.41 ms at p95) on the 5-node pipeline. Blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
 
 ## Integration
 
@@ -242,6 +242,35 @@ Shorter sessions from development, with the same settings:
 
 A Mac that sleeps pauses the whole session. On battery `caffeinate -i` didn't stop it sleeping, so keep the Mac plugged in, or awake with the lid open.
 
+## Overhead benchmark
+
+`bench/overhead.py` times the 5-node pipeline 1,000 times in each of three modes, interleaved, against the fake server answering with no added delay:
+- **off:** plain LangGraph with an unwrapped OpenAI client;
+- **record:** instrumented, recording to SQLite on local disk with every event fsynced;
+- **replay:** the run just recorded, served from its log.
+
+Per step is a run's time over its 5 nodes. Three of them run in parallel, so it's a share of wall time, not one node's time. Added latency is the difference from **off** at each percentile.
+
+```sh
+uv run python -m bench.overhead        # writes bench/results/overhead.json
+```
+
+On an Apple M6 laptop, on battery (`bench/results/overhead.json`):
+
+| Mode | Run p50 / p95 | Per step p50 / p95 | Added per step p50 / p95 |
+| --- | --- | --- | --- |
+| off | 7.36 / 10.12 ms | 1.47 / 2.02 ms | |
+| record | 8.34 / 12.18 ms | 1.67 / 2.44 ms | **0.20 / 0.41 ms** |
+| replay | 1.58 / 3.00 ms | 0.32 / 0.60 ms | −1.16 / −1.42 ms |
+
+- Recording adds 0.12 ms per LLM or tool call at p50 (0.26 ms at p95), well within the target of a few ms. Repeat runs vary by about 0.05 ms per step.
+- A run's log is 13 events and 9.3 KB: 8 LLM and tool calls, 3 clock, uuid and rng reads, and the run's start and finish.
+- Replay is faster than the live run, since nothing goes over the network.
+- The fsync is SQLite's default on macOS, not `F_FULLFSYNC`, so the numbers don't include flushing the drive's own cache.
+- Against a real model, whose calls take hundreds of milliseconds, the added time is a rounding error.
+
+The benchmark also turned up a replay cost that grew with the store. Naming a replay run (`<run>.replay-N`) used to parse the first event of every run in the store; at 2,000 runs that took 4.5 ms of a 6 ms replay. It now counts earlier replays with a range query on the primary key.
+
 ## Clock, ids and randomness
 
 `ledger.time()`, `ledger.now()`, `ledger.uuid4()` and `ledger.rng()` read live values while recording and logged values while replaying; outside a session they behave like the stdlib. `ledger.rng()` logs one seed per task and returns a `random.Random`, so any number of draws costs one event. They are explicit calls, not patches of `time`, `uuid` and `random`, because LangGraph, httpx and the OpenAI client read the clock too, a varying number of times per run.
@@ -301,6 +330,7 @@ docker compose -f deploy/docker-compose.yml run --rm replay
 | `chaos/` | Chaos benchmark: worker, harness (local `kill -9` or `docker kill` with Toxiproxy), invariants |
 | `examples/toy_pipeline.py` | 5-node pipeline with a 3-way parallel fan-out |
 | `bench/replay_fidelity.py` | Replay-fidelity benchmark against LangGraph checkpoint replay; results in `bench/results/` |
+| `bench/overhead.py` | Overhead benchmark: added latency per step with Ledger recording and replaying |
 | `deploy/` | Dockerfile and Compose file |
 
 Payloads are stored as canonical JSON inside protobuf events, because protobuf serialization is not canonical and would break content hashing.
