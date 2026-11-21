@@ -15,7 +15,8 @@ bench/data/
 
 # Trace UI build output, copied in by `make ui`
 ledger/ui/static/
-server/web/
+# (server/webui/dist/.gitkeep is tracked, added with -f, so go:embed has a file)
+server/webui/dist/*
 ui/node_modules/
 ui/build/
 ui/.svelte-kit/

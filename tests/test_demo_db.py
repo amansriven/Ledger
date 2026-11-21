@@ -24,7 +24,8 @@ def test_the_demo_store_has_one_of_each_kind_of_run(tmp_path):
     with ledger.EventStore(path) as store:
         runs = {r.run_id: r for r in list_runs(store)}
         modes = sorted(r.mode for r in runs.values())
-        assert modes.count("record") == 5 and modes.count("replay") == 1
+        assert modes.count("record") == 6 and modes.count("replay") == 1
+        assert any(path.with_name("demo.db.blobs").rglob("*"))
         assert all(r.status == "ok" for r in runs.values())
         [replay] = [r for r in runs.values() if r.mode == "replay"]
         assert replay.live == 0
