@@ -210,8 +210,10 @@ class TraceService:
 
     def GetPayload(self, req: ts.GetPayloadRequest) -> ts.GetPayloadResponse:
         digest = req.sha256
+        # Anything but a lowercase hex digest names no payload (and never
+        # reaches the filesystem).
         if not _DIGEST.fullmatch(digest):
-            raise ConnectError("invalid_argument", f"not a lowercase SHA-256 hex digest: {digest!r}")
+            raise ConnectError("not_found", f"no payload {digest!r}")
         try:
             data = self.store.blobs.get(digest)
         except BlobMissing:

@@ -187,8 +187,8 @@ def test_list_diagnoses_returns_what_ledger_diagnose_saved(server, runs, demo_pa
     ("GetRun", {}, 404, "not_found"),
     ("ListDiagnoses", {"runId": "nope"}, 404, "not_found"),
     ("GetPayload", {"sha256": "0" * 64}, 404, "not_found"),
-    ("GetPayload", {"sha256": "../../../../etc/passwd"}, 400, "invalid_argument"),
-    ("GetPayload", {"sha256": "A" * 64}, 400, "invalid_argument"),
+    ("GetPayload", {"sha256": "../../../../etc/passwd"}, 404, "not_found"),
+    ("GetPayload", {"sha256": "A" * 64}, 404, "not_found"),
     ("GetRun", {"runId": 5, "unknownField": True}, 400, "invalid_argument"),
 ])
 def test_errors_use_connect_codes_and_statuses(server, method, body, status, code):

@@ -201,7 +201,9 @@ def responses(base_url: str) -> list[tuple[str, Any]]:
     add("GetPayload malformed", _norm_ok(*call(base_url, "GetPayload", {"sha256": "../../etc/passwd"})))
     add("GetRun bad JSON", _norm_ok(*call(base_url, "GetRun", raw=b"{not json")))
     add("GetRun unknown field", _norm_ok(*call(base_url, "GetRun", {"runId": UNKNOWN_RUN, "extra": 1})))
-    add("ListRuns as proto", _norm_ok(*call(base_url, "ListRuns", {}, content_type="application/proto")))
+    # A codec neither server has (connect-go always has application/proto,
+    # while `ledger ui` speaks JSON only, so that one would differ).
+    add("ListRuns as text", _norm_ok(*call(base_url, "ListRuns", {}, content_type="text/plain")))
     add("WatchRun unknown", _norm_watch(*watch(base_url, UNKNOWN_RUN)))
     if runs:
         rid = runs[0]["runId"]
