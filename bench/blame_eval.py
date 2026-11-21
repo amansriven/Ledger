@@ -243,12 +243,24 @@ failure: the earliest step that, had it been correct, would have let the run suc
 Answer with JSON only: {{"step": <step number>, "agent": "<agent name>"}}"""
 
 
+def judge_options(temperature: float | None, reasoning_effort: str | None) -> dict[str, Any]:
+    """Sampling options for the judge call. Both are left out unless given:
+    reasoning models such as the GPT-6.2 family reject a custom temperature."""
+    out: dict[str, Any] = {}
+    if temperature is not None:
+        out["temperature"] = temperature
+    if reasoning_effort is not None:
+        out["reasoning_effort"] = reasoning_effort
+    return out
+
+
 def judge(run_id: str, w: Workload, store: ledger.EventStore, client: Any, model: str,
-          pricing: Pricing | None) -> tuple[Any, str | None, float]:
+          pricing: Pricing | None, options: dict[str, Any] | None = None,
+          ) -> tuple[Any, str | None, float]:
     """Ask the judge model. Returns (step or None, agent or None, dollars)."""
     trace, numbered = trace_text(run_id, store)
     resp = client.chat.completions.create(
-        model=model, temperature=0,
+        model=model, **(options or {}),
         messages=[{"role": "user", "content": JUDGE_PROMPT.format(describe=w.describe,
                                                                    trace=trace)}],
     )
@@ -410,7 +422,8 @@ def _judge_config(args: argparse.Namespace) -> dict[str, Any] | None:
     pricing = None
     if args.judge_price:
         pricing = Pricing(*args.judge_price)
-    return {"client": client, "model": args.judge_model, "pricing": pricing}
+    return {"client": client, "model": args.judge_model, "pricing": pricing,
+            "options": judge_options(args.judge_temperature, args.judge_reasoning_effort)}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -429,6 +442,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--judge-base-url")
     p.add_argument("--judge-price", type=float, nargs=2, metavar=("IN", "OUT"),
                    help="judge dollars per million input and output tokens")
+    p.add_argument("--judge-temperature", type=float, help="left out unless given")
+    p.add_argument("--judge-reasoning-effort", help="e.g. low, medium, high")
     p.add_argument("--out", type=Path)
     args = p.parse_args(argv)
 

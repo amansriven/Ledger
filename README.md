@@ -2,7 +2,7 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay) done; M2 (exactly-once effects) done.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. Recording adds 0.20 ms per step at p50 (0.41 ms at p95) on the 5-node pipeline. M3 (blame) has started: `ledger.diagnose` finds the step that broke a failed run by bisecting over forked replays, and `ledger.testing.faults` makes failed runs with a known guilty step. `bench/blame_eval.py` scores it against a naive rerun scan and random pick on injected faults; `bench/who_and_when.py` loads the Who&When logs and scores log-only methods on them. The LLM-judge baseline needs a model and comes next. The UI comes later (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay) done; M2 (exactly-once effects) done.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. Recording adds 0.20 ms per step at p50 (0.41 ms at p95) on the 5-node pipeline. M3 (blame) has started: `ledger.diagnose` finds the step that broke a failed run by bisecting over forked replays, and `ledger.testing.faults` makes failed runs with a known guilty step. `bench/blame_eval.py` scores it against a naive rerun scan and random pick on injected faults; `bench/who_and_when.py` scores log-only methods on the Who&When logs: an LLM judge on `gpt-6.2-sol` names the responsible agent in 60% of the 184 logs and the decisive step in 43%. Running the blame benchmark on a real model, against that judge, comes next. The UI comes later (see `Ledger Detailed Build Plan.md`).
 
 ## Integration
 
@@ -383,13 +383,30 @@ The two halves are formatted differently, and the loader evens them out:
 
 The generated logs run 5 to 10 messages; the hand-crafted ones run 5 to 130, median 33. A judge reading every log in full reads about 1.3M tokens (by a 4-characters-per-token estimate), 0.93M of them in the hand-crafted half. `--max-chars` cuts long messages, and `--max-dollars` stops the judge once it has spent that much.
 
-| Method | Agent accuracy | Step accuracy |
-| --- | --- | --- |
-| random, all 184 | 0.332 | 0.095 |
-| random, algorithm-generated | 0.291 | 0.120 |
-| random, hand-crafted | 0.422 | 0.042 |
+| Method | Logs | Agent accuracy (95% CI) | Step accuracy (95% CI) |
+| --- | --- | --- | --- |
+| random | all 184 | 0.332 | 0.095 |
+| random | algorithm-generated (126) | 0.291 | 0.120 |
+| random | hand-crafted (58) | 0.422 | 0.042 |
+| judge, gpt-6.2-sol | all 184 | 0.603 (0.53–0.67) | 0.429 (0.36–0.50) |
+| judge, gpt-6.2-sol | algorithm-generated | 0.619 (0.53–0.70) | 0.484 (0.40–0.57) |
+| judge, gpt-6.2-sol | hand-crafted | 0.569 (0.44–0.69) | 0.310 (0.21–0.44) |
+| judge, gpt-6.2-sol, given the right answer | all 184 | 0.592 (0.52–0.66) | 0.380 (0.31–0.45) |
+| judge, gpt-6.2-sol, given the right answer | algorithm-generated | 0.603 (0.52–0.68) | 0.444 (0.36–0.53) |
+| judge, gpt-6.2-sol, given the right answer | hand-crafted | 0.569 (0.44–0.69) | 0.241 (0.15–0.36) |
 
-`random` is the exact expected accuracy of picking one of the log's agents (not the human who set the task) and one of its steps uniformly. `judge` is Who&When's all-at-once method: an LLM given the task, optionally the right answer (`--with-ground-truth`), and the whole log, naming the agent and step. It needs a model and has not been run yet. Who&When's best method reached 53.5% agent-level and 14.2% step-level accuracy.
+- **random:** the exact expected accuracy of picking one of the log's agents (not the human who set the task) and one of its steps uniformly.
+- **judge:** Who&When's all-at-once method. An LLM gets the task, optionally the right answer (`--with-ground-truth`), and the whole log, and names the agent and step. It ran on `gpt-6.2-sol` at its default reasoning effort, with no custom temperature, since the GPT-6.2 models reject one. That makes each number one sample, not a fixed answer.
+- **Cost and logs:** each pass read about 1.39M input tokens and cost about $3.00 (`bench/results/who_and_when.json` and `who_and_when-ground-truth.json`). The per-log answers are in the same files.
+
+For comparison, the best method in the Who&When paper reached 53.5% agent-level and 14.2% step-level accuracy, with the models of its time. Two findings:
+
+- **Agent accuracy:** today's judge is close to that agent-level figure (0.60 against 0.535).
+- **Step accuracy:** it is three times higher (0.43 against 0.142).
+
+Being given the right answer did not help: step accuracy was 0.38 with it, against 0.43 without. The intervals overlap, so the honest reading is that the right answer adds nothing measurable here, not that it hurts.
+
+This judge is the baseline M3's gate is set against. On Who&When it can only be compared with other log-only methods, because counterfactual blame needs a system it can rerun. The head-to-head with `ledger.diagnose` is the blame benchmark run on a real model, which comes next.
 
 ## Clock, ids and randomness
 
