@@ -63,6 +63,7 @@ def _wrap(fn: F, name: str, normalizer: Normalizer) -> F:
             started = time.perf_counter_ns()
             try:
                 result = await fn(*args, **kwargs)
+                result = session.live_outcome(step, "tool_call", result)
             except Exception as exc:
                 log_live(session, step, "tool_call", body, error=exc, started_ns=started)
                 raise
@@ -88,6 +89,7 @@ def _wrap(fn: F, name: str, normalizer: Normalizer) -> F:
         started = time.perf_counter_ns()
         try:
             result = fn(*args, **kwargs)
+            result = session.live_outcome(step, "tool_call", result)
         except Exception as exc:
             log_live(session, step, "tool_call", body, error=exc, started_ns=started)
             raise

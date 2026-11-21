@@ -18,7 +18,7 @@ import enum
 import random
 import threading
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -148,6 +148,9 @@ class Session:
         # Set by ledger.resume: which resume this is, and how the run had ended.
         self.resume_attempt = 0
         self.previous_error: pb.Error | None = None
+        # Set by ledger.testing.faults.inject on a recording: may replace a
+        # live call's outcome before it is logged.
+        self.fault: Callable[[pb.StepRef, str, Any], Any] | None = None
         # Compensations of confirmed effects, in the order they were confirmed.
         self._compensations: list[Any] = []
         self._counters: dict[tuple[str, int, str, str], int] = {}
@@ -180,6 +183,10 @@ class Session:
                 self.stats.live_calls += 1
             else:
                 self.stats.replayed_calls += 1
+
+    def live_outcome(self, step: pb.StepRef, kind: str, value: Any) -> Any:
+        """A live call's outcome, after any injected fault (ledger.testing.faults)."""
+        return value if self.fault is None else self.fault(step, kind, value)
 
     # Sagas
 

@@ -2,7 +2,7 @@
 
 A Python runtime under LangGraph that makes agent runs replayable, crash-safe and self-diagnosing.
 
-**Status: M1 (deterministic replay) done; M2 (exactly-once effects) done.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. Recording adds 0.20 ms per step at p50 (0.41 ms at p95) on the 5-node pipeline. Blame and the UI come in later milestones (see `Ledger Detailed Build Plan.md`).
+**Status: M1 (deterministic replay) done; M2 (exactly-once effects) done.** Runs record and replay end to end with zero live calls, including clock reads, ids and randomness; large payloads live in a content-addressed blob store; requests are matched after masking timestamps and ids. A replay of edited code can go live from the first call that no longer matches, and only downstream of it. `ledger.fork` replays a run with chosen calls edited or rerun live, and the `ledger` command records, replays and forks runs from the shell. Hypothesis property tests check replay, fork and divergence on randomly generated graphs, and the replay-fidelity benchmark passes the M1 gate: 200 of 200 recorded runs replay identically with the network off. `@ledger.effect` makes side-effecting calls such as Stripe refunds happen once per run step: idempotency keys from the run and step, a write-ahead pending/confirmed record, and retries with the same key; an example refund agent uses it. `ledger.resume` picks a crashed run up in the same run and log, settling any refund it left pending, and effects with a `compensate` function are undone, newest first, when a run fails for good. A chaos harness kills the worker and cuts its network while it works through refund tickets, and the M2 gate passes: in 10,000 crash-injected runs Ledger made no duplicate refund, where stock LangGraph with a checkpointer and node retries made 182. Recording adds 0.20 ms per step at p50 (0.41 ms at p95) on the 5-node pipeline. M3 (blame) has started: `ledger.diagnose` finds the step that broke a failed run by bisecting over forked replays, and `ledger.testing.faults` makes failed runs with a known guilty step. The blame benchmark and the UI come later (see `Ledger Detailed Build Plan.md`).
 
 ## Integration
 
@@ -271,6 +271,42 @@ On an Apple M6 laptop, on battery (`bench/results/overhead.json`):
 
 The benchmark also turned up a replay cost that grew with the store. Naming a replay run (`<run>.replay-N`) used to parse the first event of every run in the store; at 2,000 runs that took 4.5 ms of a 6 ms replay. It now counts earlier replays with a range query on the primary key.
 
+## Blame
+
+`ledger.diagnose` names the step that broke a failed run. It reruns versions of the run where chosen calls are drawn live again, each a fork of the recording, and checks which ones pass.
+
+```python
+def ok(out) -> bool:                          # what success means for this graph
+    return out["draft"].startswith("Report")
+
+d = ledger.diagnose(run_id, graph, ok)
+d.step                                        # StepInfo of the decisive step, or None
+d.steps, d.complete                           # every step needed, and whether rerunning them alone fixed it
+d.forks, d.live_calls                         # what the diagnosis cost
+```
+
+Rerunning from step k redraws every call from k on in log order and replays the ones before it from the log at no cost. If that fixes the run and rerunning from the next step doesn't, k's recorded outcome is needed for the failure. That is the decisive step as [Who&When](https://arxiv.org/abs/2505.00212) defines it: the earliest step whose correction turns failure into success. With one bad step, rerunning from k fixes the run for every k up to it and none after, so a binary search finds it. On n calls that takes 1 fork to check that rerunning everything fixes the run, about log2(n) to find the step, and 1 to check that rerunning the step alone (with what depends on it) is enough. On the 11-call toy pipeline that is at most 6 forks.
+
+- **Several bad steps:** if the first step found isn't enough alone, the search goes on over the steps after it, with the found ones always rerun.
+- **No step:** if rerunning everything still fails, `d.step` is None. The cause is then in the code or the input, or the failure comes back whenever its step is redrawn.
+- **Candidates:** LLM calls, tool calls, and clock, uuid and rng reads. Effects are not candidates, and a fork that would run one live raises `LiveEffectRefused` unless `live_effects=True`.
+- **Noise:** `repeats=n` runs each counterfactual n times and counts it as a fix when more than half pass. Confidence intervals and a budget per diagnosis come in week 7.
+
+`ledger.testing.faults` makes failed runs with a known cause. It corrupts the outcome of one call of a recording and keeps the step it hit as ground truth. The corrupted outcome is logged as the call's own, so the log looks like any recording and nothing in it gives the answer away:
+
+```python
+from ledger.testing import faults
+
+fault = faults.Fault(node="research_web", kind="llm_call", corrupt=faults.replace_text("a wrong summary"))
+with ledger.record(store) as rec, faults.inject(fault):
+    graph.invoke(inputs)
+fault.step                                    # the guilty step's key
+```
+
+In the tests, one fault at each of the 8 calls of a parallel tool graph and at the LLM calls of the toy pipeline is found every time, and so are two faults in different branches. That is with the fake server, where a redrawn call never repeats the fault. Accuracy on runs where it can, and against baselines, is the week-7 benchmark.
+
+**Prior work.** [Who&When](https://arxiv.org/abs/2505.00212)'s methods and [AgenTracer](https://arxiv.org/abs/2509.03312)-8B attribute a failure from its log alone; AgenTracer uses counterfactual replay only to label its training data. [FAMAS](https://arxiv.org/abs/2509.13782) reruns the system many times and scores steps by spectrum analysis. Rerunning counterfactuals at diagnosis time has been done too, for example by [Causal Agent Replay](https://arxiv.org/abs/2606.08275). What Ledger does that they don't: it reruns counterfactuals inside the runtime that recorded the run, so everything before the rerun step replays exactly from the log instead of being run again or simulated, a bisection keeps the reruns to about log2 of the step count, and no counterfactual repeats a side effect.
+
 ## Clock, ids and randomness
 
 `ledger.time()`, `ledger.now()`, `ledger.uuid4()` and `ledger.rng()` read live values while recording and logged values while replaying; outside a session they behave like the stdlib. `ledger.rng()` logs one seed per task and returns a `random.Random`, so any number of draws costs one event. They are explicit calls, not patches of `time`, `uuid` and `random`, because LangGraph, httpx and the OpenAI client read the clock too, a varying number of times per run.
@@ -322,9 +358,11 @@ docker compose -f deploy/docker-compose.yml run --rm replay
 | `ledger/core/` | Canonical payloads, SQLite WAL event store, blob store, request normalization, clock/uuid/rng shims, sessions and step keys |
 | `ledger/intercept/` | OpenAI client wrapper, `@tool`, LangGraph `instrument` |
 | `ledger/replay/` | Replay index, divergence detection, `replay`, `fork` with `steps`, and `resume` |
+| `ledger/blame/` | `diagnose`: counterfactual blame by bisection over forked replays |
 | `ledger/effects/` | `@ledger.effect`: idempotency keys, write-ahead pending/confirmed records, retries; sagas |
 | `ledger/cli.py` | The `ledger` command: `record`, `replay`, `fork`, `resume`, `steps`, `runs` |
 | `ledger/testing/fake_llm.py` | Nondeterministic fake LLM and search server |
+| `ledger/testing/faults.py` | Fault injection into recordings, with the guilty step as ground truth |
 | `ledger/testing/fake_stripe.py` | Fake Stripe API (charges, refunds, idempotency keys) with injectable faults |
 | `examples/refund_agent.py` | Support-ticket refund agent; the M2 workload |
 | `chaos/` | Chaos benchmark: worker, harness (local `kill -9` or `docker kill` with Toxiproxy), invariants |
