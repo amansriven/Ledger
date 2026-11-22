@@ -37,7 +37,7 @@ func main() {
 
 func run() error {
 	db := flag.String("db", envOr("LEDGER_DB", "ledger.db"), "event store (default: $LEDGER_DB or ledger.db)")
-	addr := flag.String("addr", "127.0.0.1:8700", "address to listen on")
+	addr := flag.String("addr", defaultAddr(), "address to listen on (0.0.0.0:$PORT when $PORT is set)")
 	immutable := flag.Bool("immutable", false, "treat the store as a file that never changes (no locks, no -shm; for read-only copies)")
 	flag.Parse()
 
@@ -86,8 +86,21 @@ func Handler(st *store.Store) http.Handler {
 	mux := http.NewServeMux()
 	path, api := ledgerv1connect.NewTraceServiceHandler(trace.New(st))
 	mux.Handle(path, localCORS(api))
-	mux.Handle("/", webui.Handler())
+	mux.Handle("/", readOnly(webui.Handler()))
 	return mux
+}
+
+// readOnly answers only GET and HEAD. The UI is static files, and the API
+// beside it has no RPC that writes, so the server takes no writes at all.
+func readOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "read-only", http.StatusMethodNotAllowed)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // localCORS lets a UI dev server on localhost call the API from another port.
@@ -117,6 +130,15 @@ func isLocal(origin string) bool {
 	}
 	host := u.Hostname()
 	return host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasSuffix(host, ".localhost")
+}
+
+// defaultAddr listens on every interface at $PORT when a host such as Railway
+// provides one, and only on loopback otherwise.
+func defaultAddr() string {
+	if port := os.Getenv("PORT"); port != "" {
+		return "0.0.0.0:" + port
+	}
+	return "127.0.0.1:8700"
 }
 
 func envOr(key, fallback string) string {

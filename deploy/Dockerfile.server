@@ -41,7 +41,9 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /ledger-server ./cmd/le
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=server /ledger-server /ledger-server
 COPY --from=demo --chown=nonroot:nonroot /demo /data
+# The server listens on 0.0.0.0:$PORT; hosts such as Railway set their own.
+ENV PORT=8700
 EXPOSE 8700
 ENTRYPOINT ["/ledger-server"]
 # --immutable: the demo store never changes, and /data needs no -shm file.
-CMD ["--db", "/data/demo.db", "--immutable", "--addr", "0.0.0.0:8700"]
+CMD ["--db", "/data/demo.db", "--immutable"]
