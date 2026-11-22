@@ -9,12 +9,17 @@ Everything runs against the fake LLM, tool and Stripe servers in
 - a toy recording with a ~6 KB topic, so some payloads live in the blob store
 - a fork of the first with one research summary edited
 - a toy run whose research_web reply was corrupted, and a saved diagnosis
-  naming that call (plus the forks the diagnosis ran)
+  naming that call (plus the 7 forks the diagnosis ran)
 - a refund agent run killed after Stripe made the refund but before the
   outcome was logged, then resumed (the refund is settled by reconcile)
 
 The servers, the UI tests and the hosted read-only UI all use this store.
 Run ids are random, so tests should look runs up by what they are, not by id.
+
+The three research branches run in parallel, so where the corrupted reply
+lands in the log, and so how many forks the diagnosis takes, varies: 7 when
+it's #6 or #7, 4 when it's the last research call (#8). ``build`` rebuilds
+until it gets 7, which shows more of the bisection (about half of builds do).
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ from ledger.testing.fake_stripe import FakeStripeServer
 TOY_REF = "ledger.examples.toy_pipeline:graph_from_env"
 REFUND_REF = "ledger.examples.refund_agent:graph_from_env"
 TOPICS = ["fencing tokens", "idempotency keys", "write-ahead logs"]
+DIAGNOSIS_FORKS = 7
 
 
 def clean(out: dict[str, Any]) -> bool:
@@ -69,7 +75,18 @@ def record_until_killed(store: ledger.EventStore, n: int, invoke) -> str:
     return rec.run_id
 
 
-def build(path: Path, latency_ms: tuple[int, int] = (20, 120)) -> None:
+def build(path: Path, latency_ms: tuple[int, int] = (20, 120), attempts: int = 30) -> None:
+    """(Re)create the demo store at ``path``, with a 7-fork diagnosis."""
+    for _ in range(attempts):
+        forks = build_once(path, latency_ms)
+        if forks == DIAGNOSIS_FORKS:
+            return
+        print(f"rebuilding: the diagnosis took {forks} forks, not {DIAGNOSIS_FORKS}")
+    raise RuntimeError(f"no {DIAGNOSIS_FORKS}-fork diagnosis in {attempts} builds")
+
+
+def build_once(path: Path, latency_ms: tuple[int, int]) -> int:
+    """Build the store once; returns how many forks the diagnosis took."""
     for p in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
         p.unlink(missing_ok=True)
     shutil.rmtree(f"{path}.blobs", ignore_errors=True)
@@ -140,6 +157,7 @@ def build(path: Path, latency_ms: tuple[int, int] = (20, 120)) -> None:
         print(f"resumed   {crashed}  refund: killed before CONFIRMED, settled by reconcile")
 
         print(f"{len(store.run_ids())} runs in {path}")
+        return d.forks
 
 
 def main() -> None:
