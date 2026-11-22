@@ -14,6 +14,8 @@ WORKDIR /ui
 COPY ui/package.json ui/package-lock.json ui/.npmrc ./
 RUN npm ci
 COPY ui/ ./
+# Shows the "demo store" banner; `make ui` and the pip package leave it off.
+ENV VITE_LEDGER_DEMO=1
 RUN npm run build
 
 # The demo store, recorded against the fake LLM, tool and Stripe servers.
