@@ -14,6 +14,8 @@ Ledger sits under a LangGraph graph and logs every LLM call, tool call, clock re
 | **Effectively-once effects** | A crash in the middle of a refund never refunds twice; the run resumes where it stopped | 0 duplicate refunds in 10,000 crash-injected runs, vs 182 for stock LangGraph |
 | **Automatic blame** | Names the step that broke a failed run by rerunning counterfactual forks of it | Right step in 99.4% of 163 failed runs on a real model, vs 68.7% for an LLM judge |
 
+**[Try the trace UI](https://ledger-trace.up.railway.app)**: recorded runs, a replay, an edited fork, a diagnosed failure and a crashed-then-resumed refund, read-only, nothing to install.
+
 Recording adds 0.20 ms per step at p50. How each number was measured: [benchmarks](https://github.com/amansriven/Ledger/blob/main/docs/benchmarks.md).
 
 ## Install
@@ -95,7 +97,7 @@ ledger ui --open                            # see the run, and the replay agains
 | [Effects, sagas and resume](https://github.com/amansriven/Ledger/blob/main/docs/effects.md) | The write-ahead protocol, compensation, resume, the refund agent |
 | [Blame](https://github.com/amansriven/Ledger/blob/main/docs/blame.md) | How `diagnose` searches, noise and budgets, fault injection, prior work |
 | [Benchmarks](https://github.com/amansriven/Ledger/blob/main/docs/benchmarks.md) | Replay fidelity, chaos, overhead, blame and Who&When, with baselines and caveats |
-| [Trace UI](https://github.com/amansriven/Ledger/blob/main/docs/ui.md) | The three views, both servers, the Docker image, working on the UI |
+| [Trace UI](https://github.com/amansriven/Ledger/blob/main/docs/ui.md) | The three views, both servers, the Docker image and hosted demo, working on the UI |
 | [CLI](https://github.com/amansriven/Ledger/blob/main/docs/cli.md) | Every `ledger` command and flag |
 
 ## Status
@@ -106,7 +108,7 @@ ledger ui --open                            # see the run, and the replay agains
 | M1 · Deterministic replay | Done: 200 / 200 identical replays |
 | M2 · Effectively-once effects | Done: 0 duplicates in 10,000 chaos runs |
 | M3 · Counterfactual blame | Gate passed on a real model |
-| M4 · UI and launch | In progress: `ledger diagnose`, the trace UI and the PyPI release are done; the demo, hosted UI and writeups are next |
+| M4 · UI and launch | In progress: `ledger diagnose`, the trace UI, the PyPI release and the [hosted read-only UI](https://ledger-trace.up.railway.app) are done; the demo video and writeups are next |
 
 ## Development
 
