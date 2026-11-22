@@ -23,3 +23,4 @@ ui/.svelte-kit/
 
 # Built by `make server`
 bin/
+buildplan.md
