@@ -35,10 +35,8 @@ def test_the_demo_store_has_one_of_each_kind_of_run(tmp_path):
         [saved] = store.diagnoses(failed.run_id)
         assert saved.data["status"] == "found" and saved.data["step"]["node"] == "research_web"
         forks = [c for cf in saved.data["counterfactuals"] for c in cf["run_ids"]]
-        assert forks and all(f in runs for f in forks)
-    # Building again starts from scratch. (How many forks the diagnosis
-    # takes depends on where parallel branches put the faulty call in the
-    # log, so compare ids, not counts.)
+        assert len(forks) == 7 and all(f in runs for f in forks)
+    # Building again starts from scratch.
     load_script().build(path, latency_ms=(0, 5))
     with ledger.EventStore(path) as store:
         assert not set(store.run_ids()) & set(runs)
